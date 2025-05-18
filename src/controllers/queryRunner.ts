@@ -487,6 +487,22 @@ export default class QueryRunner {
             this._statusView.showRowCount(obj.ownerUri, obj.message.message);
         } else {
             this._statusView.hideRowCount(obj.ownerUri, true);
+
+            // If a fatal error occurs, the service may not send a query
+            // complete notification. In that case, stop the spinner and
+            // update the query state so the user isn't left waiting
+            // indefinitely.
+            if (this._isExecuting && /fatal error/i.test(obj.message.message)) {
+                this._statusView.executedQuery(obj.ownerUri);
+                this.removeRunningQuery();
+                this._isExecuting = false;
+                this._hasCompleted = true;
+                this.eventEmitter.emit(
+                    "complete",
+                    Utils.parseNumAsTimeString(this._totalElapsedMilliseconds),
+                    true,
+                );
+            }
         }
     }
 

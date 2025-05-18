@@ -575,6 +575,58 @@ suite("Query Runner tests", () => {
         );
     });
 
+    test("Notification - Fatal error message stops execution", () => {
+        let mockEventEmitter = TypeMoq.Mock.ofType(
+            EventEmitter,
+            TypeMoq.MockBehavior.Strict,
+        );
+        mockEventEmitter.setup((x) => x.emit("message", TypeMoq.It.isAny()));
+        mockEventEmitter.setup((x) =>
+            x.emit("complete", TypeMoq.It.isAnyString(), TypeMoq.It.isAny()),
+        );
+
+        let message: QueryExecuteContracts.QueryExecuteMessageParams = {
+            message: {
+                batchId: 0,
+                isError: true,
+                message: "SQL Execution error: A fatal error occurred.",
+                time: new Date().toISOString(),
+            },
+            ownerUri: standardUri,
+        };
+
+        testStatusView.setup((x) => x.hideRowCount(TypeMoq.It.isAny(), true));
+        testStatusView.setup((x) => x.executedQuery(TypeMoq.It.isAny()));
+
+        let queryRunner: QueryRunner = new QueryRunner(
+            standardUri,
+            standardTitle,
+            testStatusView.object,
+            testSqlToolsServerClient.object,
+            testQueryNotificationHandler.object,
+            testVscodeWrapper.object,
+        );
+        queryRunner.batchSetMessages[message.message.batchId] = [];
+        queryRunner.eventEmitter = mockEventEmitter.object;
+
+        queryRunner.handleMessage(message);
+
+        mockEventEmitter.verify(
+            (x) => x.emit("message", TypeMoq.It.isAny()),
+            TypeMoq.Times.once(),
+        );
+        mockEventEmitter.verify(
+            (x) =>
+                x.emit(
+                    "complete",
+                    TypeMoq.It.isAnyString(),
+                    TypeMoq.It.isAny(),
+                ),
+            TypeMoq.Times.once(),
+        );
+        assert.equal(queryRunner.isExecutingQuery, false);
+    });
+
     test("Notification - Query complete", () => {
         // Setup:
         // ... Create a mock for an event emitter that handles complete notifications
