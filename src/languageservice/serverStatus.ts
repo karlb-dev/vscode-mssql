@@ -42,6 +42,7 @@ export class ServerStatusView implements IStatusView, vscode.Disposable {
     private _statusBarItem: vscode.StatusBarItem = undefined;
     private _onDidChangeActiveTextEditorEvent: vscode.Disposable;
     private _onDidCloseTextDocument: vscode.Disposable;
+    private _progressTimerId: NodeJS.Timeout | undefined;
 
     constructor() {
         this._statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right);
@@ -68,6 +69,10 @@ export class ServerStatusView implements IStatusView, vscode.Disposable {
 
     public serviceInstalled(): void {
         this._statusBarItem.command = undefined;
+        if (this._progressTimerId) {
+            clearInterval(this._progressTimerId);
+            this._progressTimerId = undefined;
+        }
         this._statusBarItem.text = Constants.serviceInstalled;
         this._statusBarItem.show();
         // Cleat the status bar after 2 seconds
@@ -78,6 +83,10 @@ export class ServerStatusView implements IStatusView, vscode.Disposable {
 
     public serviceInstallationFailed(): void {
         this._statusBarItem.command = undefined;
+        if (this._progressTimerId) {
+            clearInterval(this._progressTimerId);
+            this._progressTimerId = undefined;
+        }
         this._statusBarItem.text = Constants.serviceInstallationFailed;
         this._statusBarItem.show();
     }
@@ -86,7 +95,7 @@ export class ServerStatusView implements IStatusView, vscode.Disposable {
         let index = 0;
         let progressTicks = ["|", "/", "-", "\\"];
 
-        setInterval(() => {
+        this._progressTimerId = setInterval(() => {
             index++;
             if (index > 3) {
                 index = 0;
@@ -101,6 +110,10 @@ export class ServerStatusView implements IStatusView, vscode.Disposable {
     }
 
     dispose(): void {
+        if (this._progressTimerId) {
+            clearInterval(this._progressTimerId);
+            this._progressTimerId = undefined;
+        }
         this.destroyStatusBar();
         this._onDidChangeActiveTextEditorEvent.dispose();
         this._onDidCloseTextDocument.dispose();
@@ -125,6 +138,10 @@ export class ServerStatusView implements IStatusView, vscode.Disposable {
     private destroyStatusBar(): void {
         if (typeof this._statusBarItem !== "undefined") {
             this._statusBarItem.dispose();
+        }
+        if (this._progressTimerId) {
+            clearInterval(this._progressTimerId);
+            this._progressTimerId = undefined;
         }
     }
 
