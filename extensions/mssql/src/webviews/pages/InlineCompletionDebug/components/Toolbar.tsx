@@ -260,8 +260,8 @@ export const InlineCompletionDebugToolbar = ({
                         }}>
                         <Option value="__default__">{defaultModelLabel}</Option>
                         {state.availableModels.map((model) => (
-                            <Option key={model.family} value={model.family}>
-                                {model.family}
+                            <Option key={`${model.vendor}/${model.id}`} value={model.family}>
+                                {model.name}
                             </Option>
                         ))}
                     </Dropdown>

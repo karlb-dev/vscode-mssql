@@ -25,6 +25,7 @@ import {
     selectPreferredModel,
     suppressDocumentSuffixOverlap,
 } from "../sqlInlineCompletionProvider";
+import { selectConfiguredLanguageModels } from "../languageModelSelection";
 import { inlineCompletionDebugStore } from "./inlineCompletionDebugStore";
 import {
     InlineCompletionDebugEvent,
@@ -122,7 +123,10 @@ export class InlineCompletionDebugController extends WebviewPanelController<
                 ) {
                     this.updateState(this.createState());
                 }
-                if (e.affectsConfiguration(Constants.configCopilotInlineCompletionsModelFamily)) {
+                if (
+                    e.affectsConfiguration(Constants.configCopilotInlineCompletionsModelFamily) ||
+                    e.affectsConfiguration(Constants.configCopilotInlineCompletionsModelVendors)
+                ) {
                     this._effectiveDefaultModelFamily = getEffectiveDefaultModelFamily(
                         this._availableModels,
                         getConfiguredModelFamily(),
@@ -261,17 +265,19 @@ export class InlineCompletionDebugController extends WebviewPanelController<
 
     private async refreshAvailableModels(): Promise<void> {
         try {
-            const models = await vscode.lm.selectChatModels({ vendor: "copilot" });
+            const models = await selectConfiguredLanguageModels();
             this._effectiveDefaultModelFamily = getEffectiveDefaultModelFamily(
                 models,
                 getConfiguredModelFamily(),
             );
-            const byFamily = new Map<string, InlineCompletionDebugModelOption>();
+            const nameCounts = getModelNameCounts(models);
+            const byModel = new Map<string, InlineCompletionDebugModelOption>();
             for (const model of models) {
-                if (!byFamily.has(model.family)) {
-                    byFamily.set(model.family, {
+                const key = `${model.vendor}/${model.id}`;
+                if (!byModel.has(key)) {
+                    byModel.set(key, {
                         id: model.id,
-                        name: model.name,
+                        name: formatModelDisplayName(model, nameCounts),
                         family: model.family,
                         vendor: model.vendor,
                         version: model.version,
@@ -279,11 +285,13 @@ export class InlineCompletionDebugController extends WebviewPanelController<
                 }
             }
 
-            this._availableModels = Array.from(byFamily.values()).sort((left, right) =>
-                left.family.localeCompare(right.family, undefined, {
-                    sensitivity: "base",
-                    numeric: true,
-                }),
+            this._availableModels = Array.from(byModel.values()).sort(
+                (left, right) =>
+                    left.family.localeCompare(right.family, undefined, {
+                        sensitivity: "base",
+                        numeric: true,
+                    }) ||
+                    left.vendor.localeCompare(right.vendor, undefined, { sensitivity: "base" }),
             );
             if (!this.isDisposed) {
                 this.updateState(this.createState());
@@ -665,16 +673,13 @@ export class InlineCompletionDebugController extends WebviewPanelController<
         const effectiveFamily = modelFamilyOverride ?? configuredFamily;
 
         if (effectiveFamily) {
-            const exact = await vscode.lm.selectChatModels({
-                vendor: "copilot",
-                family: effectiveFamily,
-            });
+            const exact = await selectConfiguredLanguageModels(effectiveFamily);
             if (exact.length > 0) {
                 return exact[0];
             }
         }
 
-        return selectPreferredModel(await vscode.lm.selectChatModels({ vendor: "copilot" }));
+        return selectPreferredModel(await selectConfiguredLanguageModels());
     }
 }
 
@@ -734,6 +739,38 @@ function getConfiguredModelFamily(): string | undefined {
             .get<string>(Constants.configCopilotInlineCompletionsModelFamily, "")
             ?.trim() || undefined
     );
+}
+
+function getModelNameCounts(models: vscode.LanguageModelChat[]): Map<string, number> {
+    const counts = new Map<string, number>();
+    for (const model of models) {
+        counts.set(model.name, (counts.get(model.name) ?? 0) + 1);
+    }
+    return counts;
+}
+
+function formatModelDisplayName(
+    model: vscode.LanguageModelChat,
+    nameCounts: Map<string, number>,
+): string {
+    if ((nameCounts.get(model.name) ?? 0) <= 1) {
+        return model.name;
+    }
+
+    return `${model.name} (${formatVendorLabel(model.vendor)})`;
+}
+
+function formatVendorLabel(vendor: string): string {
+    switch (vendor) {
+        case "copilot":
+            return "Copilot";
+        case "anthropic-cli":
+            return "Anthropic CLI";
+        case "openai-cli":
+            return "OpenAI CLI";
+        default:
+            return vendor;
+    }
 }
 
 function getConfiguredUseSchemaContext(): boolean {

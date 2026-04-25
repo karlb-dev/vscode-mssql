@@ -13,6 +13,10 @@ import { getErrorMessage } from "../utils/utils";
 import { inlineCompletionDebugStore } from "./inlineCompletionDebug/inlineCompletionDebugStore";
 import { isInlineCompletionFeatureEnabled } from "./inlineCompletionFeatureGate";
 import {
+    getConfiguredInlineCompletionModelVendors,
+    selectConfiguredLanguageModels,
+} from "./languageModelSelection";
+import {
     SqlInlineCompletionSchemaContext,
     SqlInlineCompletionSchemaContextService,
     SqlInlineCompletionSchemaObject,
@@ -93,7 +97,10 @@ export class SqlInlineCompletionProvider
                 this.clearModelCache();
             }),
             vscode.workspace.onDidChangeConfiguration((e) => {
-                if (e.affectsConfiguration(Constants.configCopilotInlineCompletionsModelFamily)) {
+                if (
+                    e.affectsConfiguration(Constants.configCopilotInlineCompletionsModelFamily) ||
+                    e.affectsConfiguration(Constants.configCopilotInlineCompletionsModelVendors)
+                ) {
                     this.clearModelCache();
                 }
             }),
@@ -275,7 +282,7 @@ export class SqlInlineCompletionProvider
         };
 
         try {
-            selectedModel = await this.getCopilotModel(overrides.modelFamily ?? undefined);
+            selectedModel = await this.getLanguageModel(overrides.modelFamily ?? undefined);
             if (!selectedModel) {
                 const telemetrySnapshot = createInlineTelemetrySnapshot(
                     undefined,
@@ -357,7 +364,7 @@ export class SqlInlineCompletionProvider
                 promptMessages,
                 {
                     justification:
-                        "MSSQL inline SQL completion uses a Copilot language model to generate ghost text.",
+                        "MSSQL inline SQL completion uses a language model to generate ghost text.",
                     modelOptions: createLanguageModelMaxTokenOptions(effectiveMaxTokens),
                 },
                 token,
@@ -505,12 +512,14 @@ export class SqlInlineCompletionProvider
         );
     }
 
-    private async getCopilotModel(
+    private async getLanguageModel(
         modelFamilyOverride?: string,
     ): Promise<vscode.LanguageModelChat | undefined> {
         const configuredFamily = this.getConfiguredModelFamily();
         const effectiveFamily = modelFamilyOverride ?? configuredFamily;
-        const selectorKey = effectiveFamily || "__auto__";
+        const selectorKey = `${getConfiguredInlineCompletionModelVendors().join(",")}|${
+            effectiveFamily || "__auto__"
+        }`;
 
         if (this._cachedModelInitialized && this._cachedModelSelectorKey === selectorKey) {
             return this._cachedModel;
@@ -521,10 +530,7 @@ export class SqlInlineCompletionProvider
         }
 
         if (effectiveFamily) {
-            const exact = await vscode.lm.selectChatModels({
-                vendor: "copilot",
-                family: effectiveFamily,
-            });
+            const exact = await selectConfiguredLanguageModels(effectiveFamily);
             if (exact.length > 0) {
                 this._cachedModel = exact[0];
                 this._cachedModelInitialized = true;
@@ -532,11 +538,11 @@ export class SqlInlineCompletionProvider
                 return this._cachedModel;
             }
             this._logger.debug(
-                `Configured model family "${effectiveFamily}" not available; selecting best available Copilot model.`,
+                `Configured model family "${effectiveFamily}" not available; selecting best available language model.`,
             );
         }
 
-        const all = await vscode.lm.selectChatModels({ vendor: "copilot" });
+        const all = await selectConfiguredLanguageModels();
         this._cachedModel = selectPreferredModel(all);
         this._cachedModelInitialized = true;
         this._cachedModelSelectorKey = selectorKey;

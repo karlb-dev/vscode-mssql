@@ -151,6 +151,15 @@ export const cmdHandleSummaryOperation = "mssql.handleSummaryOperation";
 export const cmdOpenChangelog = "mssql.openChangelog";
 export const cmdOpenAzureDataStudioMigration = "mssql.openAzureDataStudioMigration";
 export const cmdOpenInlineCompletionDebug = "mssql.openInlineCompletionDebug";
+export const cmdManageAnthropicCliLanguageModelProvider =
+    "mssql.copilot.cliProviders.manageAnthropic";
+export const cmdManageCodexCliLanguageModelProvider = "mssql.copilot.cliProviders.manageCodex";
+export const cmdSetAnthropicSdkLanguageModelApiKey =
+    "mssql.copilot.sdkProviders.anthropic.setApiKey";
+export const cmdClearAnthropicSdkLanguageModelApiKey =
+    "mssql.copilot.sdkProviders.anthropic.clearApiKey";
+export const cmdSetOpenAiSdkLanguageModelApiKey = "mssql.copilot.sdkProviders.openai.setApiKey";
+export const cmdClearOpenAiSdkLanguageModelApiKey = "mssql.copilot.sdkProviders.openai.clearApiKey";
 export const cmdOpenGithubChat = "workbench.action.chat.open";
 export const cmdBackupDatabase = "mssql.backupDatabase";
 export const cmdRestoreDatabase = "mssql.restoreDatabase";
@@ -303,8 +312,39 @@ export const configCopilotInlineCompletionsUseSchemaContext =
     "mssql.copilot.inlineCompletions.useSchemaContext";
 export const configCopilotInlineCompletionsModelFamily =
     "mssql.copilot.inlineCompletions.modelFamily";
+export const configCopilotInlineCompletionsModelVendors =
+    "mssql.copilot.inlineCompletions.modelVendors";
 export const configCopilotInlineCompletionsDebugRecordWhenClosed =
     "mssql.copilot.inlineCompletions.debug.recordWhenClosed";
+export const configCopilotCliProvidersAnthropicEnabled =
+    "mssql.copilot.cliProviders.anthropic.enabled";
+export const configCopilotCliProvidersAnthropicPath = "mssql.copilot.cliProviders.anthropic.path";
+export const configCopilotCliProvidersAnthropicAdditionalModels =
+    "mssql.copilot.cliProviders.anthropic.additionalModels";
+export const configCopilotCliProvidersAnthropicExtraArgs =
+    "mssql.copilot.cliProviders.anthropic.extraArgs";
+export const configCopilotCliProvidersAnthropicEnv = "mssql.copilot.cliProviders.anthropic.env";
+export const configCopilotCliProvidersCodexEnabled = "mssql.copilot.cliProviders.codex.enabled";
+export const configCopilotCliProvidersCodexPath = "mssql.copilot.cliProviders.codex.path";
+export const configCopilotCliProvidersCodexAdditionalModels =
+    "mssql.copilot.cliProviders.codex.additionalModels";
+export const configCopilotCliProvidersCodexExtraArgs = "mssql.copilot.cliProviders.codex.extraArgs";
+export const configCopilotCliProvidersCodexEnv = "mssql.copilot.cliProviders.codex.env";
+export const configCopilotSdkProvidersAnthropicEnabled =
+    "mssql.copilot.sdkProviders.anthropic.enabled";
+export const configCopilotSdkProvidersAnthropicAdditionalModels =
+    "mssql.copilot.sdkProviders.anthropic.additionalModels";
+export const configCopilotSdkProvidersAnthropicBaseUrl =
+    "mssql.copilot.sdkProviders.anthropic.baseUrl";
+export const configCopilotSdkProvidersAnthropicTimeout =
+    "mssql.copilot.sdkProviders.anthropic.timeout";
+export const configCopilotSdkProvidersAnthropicEnv = "mssql.copilot.sdkProviders.anthropic.env";
+export const configCopilotSdkProvidersOpenAiEnabled = "mssql.copilot.sdkProviders.openai.enabled";
+export const configCopilotSdkProvidersOpenAiAdditionalModels =
+    "mssql.copilot.sdkProviders.openai.additionalModels";
+export const configCopilotSdkProvidersOpenAiBaseUrl = "mssql.copilot.sdkProviders.openai.baseUrl";
+export const configCopilotSdkProvidersOpenAiTimeout = "mssql.copilot.sdkProviders.openai.timeout";
+export const configCopilotSdkProvidersOpenAiEnv = "mssql.copilot.sdkProviders.openai.env";
 export const configSelectedAzureSubscriptions = "mssql.selectedAzureSubscriptions";
 export const configShowActiveConnectionAsCodeLensSuggestion =
     "mssql.query.showActiveConnectionAsCodeLensSuggestion";

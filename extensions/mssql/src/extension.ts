@@ -28,6 +28,8 @@ import {
     createUriOwnershipCoordinator,
     initializeUriOwnershipCoordinator,
 } from "./uriOwnership/uriOwnershipInitialization";
+import { registerCliLanguageModelProviders } from "./copilot/cliLanguageModels";
+import { registerSdkLanguageModelProviders } from "./copilot/sdkLanguageModels";
 
 /** exported for testing purposes only */
 export let controller: MainController = undefined;
@@ -44,6 +46,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<IExten
     initializeWebviewLocalizationCache();
 
     IconUtils.initialize(context.extensionUri);
+    registerSdkLanguageModelProviders(context);
+    registerCliLanguageModelProviders(context);
 
     // Check if GitHub Copilot is installed
     const copilotExtension = vscode.extensions.getExtension("github.copilot-chat");

@@ -1,0 +1,160 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+import * as vscode from "vscode";
+import * as Constants from "../../constants/constants";
+import { logger2 } from "../../models/logger2";
+import { isInlineCompletionFeatureEnabled } from "../inlineCompletionFeatureGate";
+import { AnthropicSdkLanguageModelProvider } from "./anthropicSdkLanguageModelProvider";
+import {
+    SdkApiKeyProviderInfo,
+    SdkApiKeyResolver,
+    sdkApiKeyProviders,
+    SdkProviderKind,
+} from "./apiKeyResolution";
+import { OpenAiSdkLanguageModelProvider } from "./openaiSdkLanguageModelProvider";
+
+type RegisterLanguageModelChatProvider = (vendor: string, provider: unknown) => vscode.Disposable;
+
+const logger = logger2.withPrefix("SdkLanguageModelProviders");
+
+export function registerSdkLanguageModelProviders(context: vscode.ExtensionContext): void {
+    const apiKeys = new SdkApiKeyResolver(context);
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand(Constants.cmdSetAnthropicSdkLanguageModelApiKey, () =>
+            promptAndStoreApiKey(apiKeys, "anthropic"),
+        ),
+        vscode.commands.registerCommand(Constants.cmdClearAnthropicSdkLanguageModelApiKey, () =>
+            clearApiKey(apiKeys, "anthropic"),
+        ),
+        vscode.commands.registerCommand(Constants.cmdSetOpenAiSdkLanguageModelApiKey, () =>
+            promptAndStoreApiKey(apiKeys, "openai"),
+        ),
+        vscode.commands.registerCommand(Constants.cmdClearOpenAiSdkLanguageModelApiKey, () =>
+            clearApiKey(apiKeys, "openai"),
+        ),
+    );
+
+    const registerLanguageModelChatProvider = (
+        vscode.lm as unknown as {
+            registerLanguageModelChatProvider?: RegisterLanguageModelChatProvider;
+        }
+    ).registerLanguageModelChatProvider;
+
+    if (typeof registerLanguageModelChatProvider !== "function") {
+        logger.warn("VS Code does not expose registerLanguageModelChatProvider in this build.");
+        return;
+    }
+
+    if (isSettingEnabled(Constants.configCopilotSdkProvidersAnthropicEnabled, true)) {
+        const provider = new AnthropicSdkLanguageModelProvider(context, { apiKeys });
+        context.subscriptions.push(registerLanguageModelChatProvider("anthropic-api", provider));
+    }
+
+    if (isSettingEnabled(Constants.configCopilotSdkProvidersOpenAiEnabled, true)) {
+        const provider = new OpenAiSdkLanguageModelProvider(context, { apiKeys });
+        context.subscriptions.push(registerLanguageModelChatProvider("openai-api", provider));
+    }
+
+    void showNoExternalProviderAvailableMessage(context, apiKeys);
+}
+
+async function promptAndStoreApiKey(
+    apiKeys: SdkApiKeyResolver,
+    kind: SdkProviderKind,
+): Promise<void> {
+    const info = sdkApiKeyProviders[kind];
+    const value = await vscode.window.showInputBox({
+        title: `Set ${info.label} API Key`,
+        prompt: `Enter the ${info.label} API key to store in VS Code SecretStorage.`,
+        password: true,
+        ignoreFocusOut: true,
+        validateInput: (input) => validateApiKeyInput(info, input),
+    });
+
+    if (value === undefined) {
+        return;
+    }
+
+    await apiKeys.setApiKey(kind, value);
+    void vscode.window.showInformationMessage(`${info.label} API key saved.`);
+}
+
+async function clearApiKey(apiKeys: SdkApiKeyResolver, kind: SdkProviderKind): Promise<void> {
+    const info = sdkApiKeyProviders[kind];
+    await apiKeys.clearApiKey(kind);
+    void vscode.window.showInformationMessage(`${info.label} API key cleared.`);
+}
+
+function validateApiKeyInput(info: SdkApiKeyProviderInfo, input: string): string | undefined {
+    const trimmed = input.trim();
+    if (!trimmed) {
+        return `${info.label} API key is required.`;
+    }
+    if (!trimmed.startsWith(info.keyPrefix)) {
+        return `${info.label} API keys should start with ${info.keyPrefix}.`;
+    }
+    return undefined;
+}
+
+async function showNoExternalProviderAvailableMessage(
+    context: vscode.ExtensionContext,
+    apiKeys: SdkApiKeyResolver,
+): Promise<void> {
+    const dontShowKey = "mssql.copilot.sdkProviders.noAvailableProviders.dontShow";
+    if (
+        context.globalState.get<boolean>(dontShowKey, false) ||
+        !isInlineCompletionFeatureEnabled()
+    ) {
+        return;
+    }
+
+    const [anthropicKey, openAiKey] = await Promise.all([
+        apiKeys.resolveAnthropic(),
+        apiKeys.resolveOpenAI(),
+    ]);
+    let copilotModels: vscode.LanguageModelChat[] = [];
+    try {
+        copilotModels = await vscode.lm.selectChatModels({ vendor: "copilot" });
+    } catch {
+        copilotModels = [];
+    }
+    if (
+        anthropicKey ||
+        openAiKey ||
+        copilotModels.length > 0 ||
+        isSettingEnabled(Constants.configCopilotCliProvidersAnthropicEnabled, false) ||
+        isSettingEnabled(Constants.configCopilotCliProvidersCodexEnabled, false)
+    ) {
+        return;
+    }
+
+    const setAnthropic = "Set Anthropic API Key";
+    const setOpenAi = "Set OpenAI API Key";
+    const dontShow = "Don't show again";
+    const selection = await vscode.window.showInformationMessage(
+        "MSSQL inline completion is configured but no language model providers are available.",
+        setAnthropic,
+        setOpenAi,
+        dontShow,
+    );
+
+    if (selection === setAnthropic) {
+        await vscode.commands.executeCommand(Constants.cmdSetAnthropicSdkLanguageModelApiKey);
+    } else if (selection === setOpenAi) {
+        await vscode.commands.executeCommand(Constants.cmdSetOpenAiSdkLanguageModelApiKey);
+    } else if (selection === dontShow) {
+        await context.globalState.update(dontShowKey, true);
+    }
+}
+
+function isSettingEnabled(setting: string, defaultValue: boolean): boolean {
+    return vscode.workspace.getConfiguration().get<boolean>(setting, defaultValue) ?? defaultValue;
+}
+
+export { AnthropicSdkLanguageModelProvider } from "./anthropicSdkLanguageModelProvider";
+export { OpenAiSdkLanguageModelProvider } from "./openaiSdkLanguageModelProvider";
+export { getSecretStorageKey, SdkApiKeyResolver } from "./apiKeyResolution";
