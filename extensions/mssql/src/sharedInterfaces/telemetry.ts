@@ -193,8 +193,6 @@ export enum TelemetryActions {
     CopilotNewQueryWithConnection = "CopilotNewQueryWithConnection",
     InlineCompletion = "InlineCompletion",
     InlineCompletionSchemaContext = "InlineCompletionSchemaContext",
-    CliProviderInvocation = "CliProviderInvocation",
-    CliProviderError = "CliProviderError",
     SdkProviderInvocation = "SdkProviderInvocation",
     SdkProviderError = "SdkProviderError",
     SdkProviderApiKeyConfigured = "SdkProviderApiKeyConfigured",

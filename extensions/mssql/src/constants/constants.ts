@@ -151,9 +151,6 @@ export const cmdHandleSummaryOperation = "mssql.handleSummaryOperation";
 export const cmdOpenChangelog = "mssql.openChangelog";
 export const cmdOpenAzureDataStudioMigration = "mssql.openAzureDataStudioMigration";
 export const cmdOpenInlineCompletionDebug = "mssql.openInlineCompletionDebug";
-export const cmdManageAnthropicCliLanguageModelProvider =
-    "mssql.copilot.cliProviders.manageAnthropic";
-export const cmdManageCodexCliLanguageModelProvider = "mssql.copilot.cliProviders.manageCodex";
 export const cmdSetAnthropicSdkLanguageModelApiKey =
     "mssql.copilot.sdkProviders.anthropic.setApiKey";
 export const cmdClearAnthropicSdkLanguageModelApiKey =
@@ -318,20 +315,6 @@ export const configCopilotInlineCompletionsEnabledCategories =
     "mssql.copilot.inlineCompletions.enabledCategories";
 export const configCopilotInlineCompletionsDebugRecordWhenClosed =
     "mssql.copilot.inlineCompletions.debug.recordWhenClosed";
-export const configCopilotCliProvidersAnthropicEnabled =
-    "mssql.copilot.cliProviders.anthropic.enabled";
-export const configCopilotCliProvidersAnthropicPath = "mssql.copilot.cliProviders.anthropic.path";
-export const configCopilotCliProvidersAnthropicAdditionalModels =
-    "mssql.copilot.cliProviders.anthropic.additionalModels";
-export const configCopilotCliProvidersAnthropicExtraArgs =
-    "mssql.copilot.cliProviders.anthropic.extraArgs";
-export const configCopilotCliProvidersAnthropicEnv = "mssql.copilot.cliProviders.anthropic.env";
-export const configCopilotCliProvidersCodexEnabled = "mssql.copilot.cliProviders.codex.enabled";
-export const configCopilotCliProvidersCodexPath = "mssql.copilot.cliProviders.codex.path";
-export const configCopilotCliProvidersCodexAdditionalModels =
-    "mssql.copilot.cliProviders.codex.additionalModels";
-export const configCopilotCliProvidersCodexExtraArgs = "mssql.copilot.cliProviders.codex.extraArgs";
-export const configCopilotCliProvidersCodexEnv = "mssql.copilot.cliProviders.codex.env";
 export const configCopilotSdkProvidersAnthropicEnabled =
     "mssql.copilot.sdkProviders.anthropic.enabled";
 export const configCopilotSdkProvidersAnthropicAdditionalModels =

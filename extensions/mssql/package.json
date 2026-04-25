@@ -40,9 +40,7 @@
         "onCommand:mssql.loadCompletionExtension",
         "onNotebook:jupyter-notebook",
         "onLanguageModelChatProvider:anthropic-api",
-        "onLanguageModelChatProvider:openai-api",
-        "onLanguageModelChatProvider:anthropic-cli",
-        "onLanguageModelChatProvider:openai-cli"
+        "onLanguageModelChatProvider:openai-api"
     ],
     "main": "./dist/extension",
     "l10n": "./l10n",
@@ -334,20 +332,6 @@
                 "label": "OpenAI API",
                 "displayName": "OpenAI API",
                 "managementCommand": "mssql.copilot.sdkProviders.openai.setApiKey"
-            },
-            {
-                "id": "anthropic-cli",
-                "vendor": "anthropic-cli",
-                "label": "Claude Code (CLI)",
-                "displayName": "Claude Code (CLI)",
-                "managementCommand": "mssql.copilot.cliProviders.manageAnthropic"
-            },
-            {
-                "id": "openai-cli",
-                "vendor": "openai-cli",
-                "label": "Codex (CLI)",
-                "displayName": "Codex (CLI)",
-                "managementCommand": "mssql.copilot.cliProviders.manageCodex"
             }
         ],
         "customEditors": [
@@ -1572,16 +1556,6 @@
                 "category": "MS SQL"
             },
             {
-                "command": "mssql.copilot.cliProviders.manageAnthropic",
-                "title": "Manage Claude Code CLI Provider",
-                "category": "MS SQL"
-            },
-            {
-                "command": "mssql.copilot.cliProviders.manageCodex",
-                "title": "Manage Codex CLI Provider",
-                "category": "MS SQL"
-            },
-            {
                 "command": "mssql.connectionSharing.editConnectionSharingPermissions",
                 "title": "%mssql.connectionSharing.editConnectionSharingPermissions%",
                 "category": "MSSQL"
@@ -2558,9 +2532,7 @@
                     "default": [
                         "copilot",
                         "anthropic-api",
-                        "openai-api",
-                        "anthropic-cli",
-                        "openai-cli"
+                        "openai-api"
                     ],
                     "items": {
                         "type": "string"
@@ -2711,134 +2683,6 @@
                         "type": "string"
                     },
                     "description": "Environment fallback values for the OpenAI API provider. OPENAI_API_KEY may be set to an API key or to the name of an existing process environment variable.",
-                    "scope": "application"
-                },
-                "mssql.copilot.cliProviders.anthropic.enabled": {
-                    "type": "boolean",
-                    "default": false,
-                    "description": "Register the Claude Code CLI provider. Disabled by default; the Anthropic API SDK provider is preferred. Enable this only if you specifically need to route through the Claude Code CLI, such as testing agent harness behavior. Latencies are typically 10-60 seconds vs. 1-5 seconds for the SDK provider, which makes the CLI provider impractical for automatic-trigger inline completion. Reload VS Code after changing this setting.",
-                    "scope": "application"
-                },
-                "mssql.copilot.cliProviders.anthropic.path": {
-                    "type": "string",
-                    "default": "",
-                    "description": "Path to the claude binary. Leave empty to auto-detect common install locations.",
-                    "scope": "application"
-                },
-                "mssql.copilot.cliProviders.anthropic.additionalModels": {
-                    "type": "array",
-                    "default": [],
-                    "items": {
-                        "type": "object",
-                        "required": [
-                            "id",
-                            "displayName",
-                            "family"
-                        ],
-                        "properties": {
-                            "id": {
-                                "type": "string"
-                            },
-                            "displayName": {
-                                "type": "string"
-                            },
-                            "family": {
-                                "type": "string"
-                            },
-                            "version": {
-                                "type": "string"
-                            },
-                            "maxInputTokens": {
-                                "type": "number"
-                            },
-                            "maxOutputTokens": {
-                                "type": "number"
-                            }
-                        }
-                    },
-                    "description": "Additional Claude Code CLI model definitions beyond the built-in catalog.",
-                    "scope": "application"
-                },
-                "mssql.copilot.cliProviders.anthropic.extraArgs": {
-                    "type": "array",
-                    "default": [],
-                    "items": {
-                        "type": "string"
-                    },
-                    "description": "Additional arguments appended to each claude invocation.",
-                    "scope": "application"
-                },
-                "mssql.copilot.cliProviders.anthropic.env": {
-                    "type": "object",
-                    "default": {},
-                    "additionalProperties": {
-                        "type": "string"
-                    },
-                    "description": "Additional environment variables for claude child processes.",
-                    "scope": "application"
-                },
-                "mssql.copilot.cliProviders.codex.enabled": {
-                    "type": "boolean",
-                    "default": false,
-                    "description": "Register the Codex CLI provider. Disabled by default; the OpenAI API SDK provider is preferred unless you specifically need CLI-routed requests. Reload VS Code after changing this setting.",
-                    "scope": "application"
-                },
-                "mssql.copilot.cliProviders.codex.path": {
-                    "type": "string",
-                    "default": "",
-                    "description": "Path to the codex binary. Leave empty to auto-detect common install locations.",
-                    "scope": "application"
-                },
-                "mssql.copilot.cliProviders.codex.additionalModels": {
-                    "type": "array",
-                    "default": [],
-                    "items": {
-                        "type": "object",
-                        "required": [
-                            "id",
-                            "displayName",
-                            "family"
-                        ],
-                        "properties": {
-                            "id": {
-                                "type": "string"
-                            },
-                            "displayName": {
-                                "type": "string"
-                            },
-                            "family": {
-                                "type": "string"
-                            },
-                            "version": {
-                                "type": "string"
-                            },
-                            "maxInputTokens": {
-                                "type": "number"
-                            },
-                            "maxOutputTokens": {
-                                "type": "number"
-                            }
-                        }
-                    },
-                    "description": "Additional Codex CLI model definitions beyond the built-in catalog.",
-                    "scope": "application"
-                },
-                "mssql.copilot.cliProviders.codex.extraArgs": {
-                    "type": "array",
-                    "default": [],
-                    "items": {
-                        "type": "string"
-                    },
-                    "description": "Additional arguments appended to each codex exec invocation.",
-                    "scope": "application"
-                },
-                "mssql.copilot.cliProviders.codex.env": {
-                    "type": "object",
-                    "default": {},
-                    "additionalProperties": {
-                        "type": "string"
-                    },
-                    "description": "Additional environment variables for codex child processes.",
                     "scope": "application"
                 },
                 "mssql.ignorePlatformWarning": {

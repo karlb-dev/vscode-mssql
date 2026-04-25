@@ -26,7 +26,7 @@ export interface InlineCompletionDebugProfileDefinition extends InlineCompletion
 export const inlineCompletionDebugCustomProfileId = "custom";
 
 export const defaultInlineCompletionModelPreference: InlineCompletionModelPreference = {
-    providerVendors: ["copilot", "anthropic-api", "openai-api", "anthropic-cli", "openai-cli"],
+    providerVendors: ["copilot", "anthropic-api", "openai-api"],
     familyPatterns: [
         /^claude-sonnet/i,
         /^claude-opus/i,

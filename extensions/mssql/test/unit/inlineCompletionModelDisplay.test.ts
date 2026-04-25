@@ -31,8 +31,6 @@ suite("Inline completion model display helpers", () => {
         expect(formatProviderLabel("copilot")).to.equal("Copilot");
         expect(formatProviderLabel("anthropic-api")).to.equal("Anthropic API");
         expect(formatProviderLabel("openai-api")).to.equal("OpenAI API");
-        expect(formatProviderLabel("anthropic-cli")).to.equal("Anthropic CLI");
-        expect(formatProviderLabel("openai-cli")).to.equal("OpenAI CLI");
         expect(formatProviderLabel("future-vendor")).to.equal("future-vendor");
     });
 

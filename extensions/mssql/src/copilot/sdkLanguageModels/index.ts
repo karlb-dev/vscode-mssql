@@ -122,13 +122,7 @@ async function showNoExternalProviderAvailableMessage(
     } catch {
         copilotModels = [];
     }
-    if (
-        anthropicKey ||
-        openAiKey ||
-        copilotModels.length > 0 ||
-        isSettingEnabled(Constants.configCopilotCliProvidersAnthropicEnabled, false) ||
-        isSettingEnabled(Constants.configCopilotCliProvidersCodexEnabled, false)
-    ) {
+    if (anthropicKey || openAiKey || copilotModels.length > 0) {
         return;
     }
 
