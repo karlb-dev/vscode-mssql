@@ -19,7 +19,9 @@ import {
     createLanguageModelMaxTokenOptions,
     fixLeadingWhitespace,
     getEffectiveMaxCompletionChars,
+    getInlineCompletionCategory,
     intentModeMaxTokens,
+    normalizeInlineCompletionCategories,
     resolveInlineCompletionRules,
     sanitizeInlineCompletionText,
     selectPreferredModel,
@@ -495,6 +497,7 @@ export class InlineCompletionDebugController extends WebviewPanelController<
         const statementPrefix = asString(sourceEvent.locals.statementPrefix);
         const suffix = asString(sourceEvent.locals.suffix);
         const intentMode = overrides.forceIntentMode ?? sourceEvent.intentMode;
+        const completionCategory = getInlineCompletionCategory(intentMode);
         const useSchemaContext = overrides.useSchemaContext ?? getConfiguredUseSchemaContext();
         const schemaContextText =
             useSchemaContext && sourceEvent.schemaContextFormatted
@@ -545,6 +548,7 @@ export class InlineCompletionDebugController extends WebviewPanelController<
                 sanitizedResponse,
                 linePrefix,
                 undefined,
+                intentMode,
             );
             finalCompletionText = suppressDocumentSuffixOverlap(finalCompletionText, suffix);
             const result = !sanitizedResponse
@@ -558,6 +562,7 @@ export class InlineCompletionDebugController extends WebviewPanelController<
             inlineCompletionDebugStore.addEvent({
                 ...cloneBaseEvent(sourceEvent),
                 timestamp: Date.now(),
+                completionCategory,
                 intentMode,
                 modelFamily: selectedModel.family,
                 modelId: selectedModel.id,
@@ -598,6 +603,7 @@ export class InlineCompletionDebugController extends WebviewPanelController<
                         : undefined,
                 locals: {
                     ...sourceEvent.locals,
+                    completionCategory,
                     intentMode,
                     useSchemaContext,
                     effectiveMaxTokens: maxTokens,
@@ -609,6 +615,7 @@ export class InlineCompletionDebugController extends WebviewPanelController<
             inlineCompletionDebugStore.addEvent({
                 ...cloneBaseEvent(sourceEvent),
                 timestamp: Date.now(),
+                completionCategory,
                 intentMode,
                 modelFamily: selectedModel.family,
                 modelId: selectedModel.id,
@@ -649,6 +656,7 @@ export class InlineCompletionDebugController extends WebviewPanelController<
                         : undefined,
                 locals: {
                     ...sourceEvent.locals,
+                    completionCategory,
                     intentMode,
                     useSchemaContext,
                     effectiveMaxTokens: maxTokens,
@@ -704,6 +712,7 @@ function createState(options: {
             debounceMs: automaticTriggerDebounceMs,
             continuationMaxTokens: continuationModeMaxTokens,
             intentMaxTokens: intentModeMaxTokens,
+            enabledCategories: getConfiguredEnabledCategories(),
             allowAutomaticTriggers: true,
         },
         availableModels: options.availableModels,
@@ -781,6 +790,13 @@ function getConfiguredUseSchemaContext(): boolean {
     );
 }
 
+function getConfiguredEnabledCategories() {
+    const configured = vscode.workspace
+        .getConfiguration()
+        .get<unknown>(Constants.configCopilotInlineCompletionsEnabledCategories, undefined);
+    return normalizeInlineCompletionCategories(configured);
+}
+
 function getRecordWhenClosedSetting(): boolean {
     return (
         vscode.workspace
@@ -809,6 +825,8 @@ function cloneBaseEvent(event: InlineCompletionDebugEvent): Omit<InlineCompletio
         column: event.column,
         triggerKind: "invoke",
         explicitFromUser: true,
+        completionCategory:
+            event.completionCategory ?? getInlineCompletionCategory(event.intentMode),
         intentMode: event.intentMode,
         inferredSystemQuery: event.inferredSystemQuery,
         modelFamily: event.modelFamily,
@@ -841,6 +859,9 @@ function getOverridesApplied(overrides: InlineCompletionDebugOverrides) {
             : {}),
         ...(overrides.debounceMs !== null ? { debounceMs: overrides.debounceMs } : {}),
         ...(overrides.maxTokens !== null ? { maxTokens: overrides.maxTokens } : {}),
+        ...(overrides.enabledCategories !== null
+            ? { enabledCategories: overrides.enabledCategories }
+            : {}),
         customSystemPromptUsed: !!overrides.customSystemPrompt,
     };
 }

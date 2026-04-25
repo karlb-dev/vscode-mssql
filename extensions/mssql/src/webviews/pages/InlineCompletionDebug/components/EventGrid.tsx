@@ -106,10 +106,17 @@ export const InlineCompletionDebugEventGrid = ({
             {
                 id: "mode",
                 name: "Mode",
-                field: "intentMode",
+                field: "completionCategory",
                 minWidth: 110,
-                formatter: (_row, _cell, value) =>
-                    badgeFormatter(value ? "intent" : "continuation", value ? "intent" : "neutral"),
+                formatter: (_row, _cell, value, _column, event) => {
+                    const category =
+                        value === "intent" || value === "continuation"
+                            ? value
+                            : event.intentMode
+                              ? "intent"
+                              : "continuation";
+                    return badgeFormatter(category, category === "intent" ? "intent" : "neutral");
+                },
             },
             {
                 id: "model",

@@ -314,6 +314,8 @@ export const configCopilotInlineCompletionsModelFamily =
     "mssql.copilot.inlineCompletions.modelFamily";
 export const configCopilotInlineCompletionsModelVendors =
     "mssql.copilot.inlineCompletions.modelVendors";
+export const configCopilotInlineCompletionsEnabledCategories =
+    "mssql.copilot.inlineCompletions.enabledCategories";
 export const configCopilotInlineCompletionsDebugRecordWhenClosed =
     "mssql.copilot.inlineCompletions.debug.recordWhenClosed";
 export const configCopilotCliProvidersAnthropicEnabled =

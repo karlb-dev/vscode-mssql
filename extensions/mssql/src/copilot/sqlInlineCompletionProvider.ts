@@ -22,10 +22,12 @@ import {
     SqlInlineCompletionSchemaObject,
 } from "./sqlInlineCompletionSchemaContextService";
 import {
+    InlineCompletionCategory,
     InlineCompletionDebugEvent,
     InlineCompletionDebugEventResult,
     InlineCompletionDebugPromptMessage,
     InlineCompletionResult,
+    inlineCompletionCategories,
 } from "../sharedInterfaces/inlineCompletionDebug";
 
 // MSSQL owns SQL ghost text for this feature. VS Code does not expose a hook to augment
@@ -76,6 +78,7 @@ interface InlineCompletionTelemetrySnapshot {
     triggerKind: string;
     latencyMs: number;
     inferredSystemQuery: boolean;
+    completionCategory: InlineCompletionCategory;
     intentMode: boolean;
 }
 
@@ -150,6 +153,9 @@ export class SqlInlineCompletionProvider
         const inferredSystemQuery = inferSystemQuery(statementPrefix, linePrefix);
         const detectedIntentMode = detectIntentMode(statementPrefix, linePrefix);
         const intentMode = overrides.forceIntentMode ?? detectedIntentMode;
+        const completionCategory = getInlineCompletionCategory(intentMode);
+        const enabledCategories =
+            overrides.enabledCategories ?? this.getConfiguredEnabledCategories();
         const effectiveMaxTokens =
             overrides.maxTokens ?? (intentMode ? intentModeMaxTokens : continuationModeMaxTokens);
         const effectiveMaxChars = getEffectiveMaxCompletionChars(
@@ -169,6 +175,10 @@ export class SqlInlineCompletionProvider
             triggerKind === vscode.InlineCompletionTriggerKind.Automatic &&
             overrides.allowAutomaticTriggers === false
         ) {
+            return [];
+        }
+
+        if (!isInlineCompletionCategoryEnabled(completionCategory, enabledCategories)) {
             return [];
         }
 
@@ -213,6 +223,7 @@ export class SqlInlineCompletionProvider
                 column: position.character + 1,
                 triggerKind: getTriggerKindName(triggerKind),
                 explicitFromUser: triggerKind === vscode.InlineCompletionTriggerKind.Invoke,
+                completionCategory,
                 intentMode,
                 inferredSystemQuery,
                 modelFamily: selectedModel?.family,
@@ -236,6 +247,9 @@ export class SqlInlineCompletionProvider
                         : {}),
                     ...(overrides.debounceMs !== null ? { debounceMs: overrides.debounceMs } : {}),
                     ...(overrides.maxTokens !== null ? { maxTokens: overrides.maxTokens } : {}),
+                    ...(overrides.enabledCategories !== null
+                        ? { enabledCategories: overrides.enabledCategories }
+                        : {}),
                     customSystemPromptUsed: !!overrides.customSystemPrompt,
                 },
                 promptMessages: debugPromptMessages,
@@ -266,6 +280,8 @@ export class SqlInlineCompletionProvider
                     effectiveMaxTokens,
                     effectiveMaxChars,
                     debounceMsApplied,
+                    completionCategory,
+                    enabledCategories,
                     selectedModelMaxInputTokens: selectedModel?.maxInputTokens,
                     selectedModelName: selectedModel?.name,
                     selectedModelVersion: selectedModel?.version,
@@ -492,6 +508,15 @@ export class SqlInlineCompletionProvider
         );
     }
 
+    private getConfiguredEnabledCategories(): InlineCompletionCategory[] {
+        const configured = vscode.workspace
+            .getConfiguration()
+            .get<unknown>(Constants.configCopilotInlineCompletionsEnabledCategories, [
+                ...inlineCompletionCategories,
+            ]);
+        return normalizeInlineCompletionCategories(configured);
+    }
+
     private getConfiguredModelFamily(): string | undefined {
         return (
             vscode.workspace
@@ -564,6 +589,7 @@ export class SqlInlineCompletionProvider
             triggerKind: snapshot?.triggerKind ?? "unknown",
             latencyBucket: getLatencyBucket(snapshot?.latencyMs ?? 0),
             inferredSystemQuery: (snapshot?.inferredSystemQuery ?? false).toString(),
+            completionCategory: snapshot?.completionCategory ?? "unknown",
             intentMode: (snapshot?.intentMode ?? false).toString(),
         });
     }
@@ -573,6 +599,36 @@ export class SqlInlineCompletionProvider
         this._cachedModelInitialized = false;
         this._cachedModelSelectorKey = undefined;
     }
+}
+
+export function getInlineCompletionCategory(intentMode: boolean): InlineCompletionCategory {
+    return intentMode ? "intent" : "continuation";
+}
+
+export function normalizeInlineCompletionCategories(value: unknown): InlineCompletionCategory[] {
+    if (!Array.isArray(value)) {
+        return [...inlineCompletionCategories];
+    }
+
+    const enabled = new Set<InlineCompletionCategory>();
+    for (const item of value) {
+        if (isInlineCompletionCategory(item)) {
+            enabled.add(item);
+        }
+    }
+
+    return inlineCompletionCategories.filter((category) => enabled.has(category));
+}
+
+export function isInlineCompletionCategoryEnabled(
+    category: InlineCompletionCategory,
+    enabledCategories: readonly InlineCompletionCategory[],
+): boolean {
+    return enabledCategories.includes(category);
+}
+
+function isInlineCompletionCategory(value: unknown): value is InlineCompletionCategory {
+    return inlineCompletionCategories.includes(value as InlineCompletionCategory);
 }
 
 export function buildCompletionRules(inferredSystemQuery: boolean, intentMode: boolean): string {
@@ -1554,6 +1610,7 @@ function createInlineTelemetrySnapshot(
         triggerKind: getTriggerKindName(triggerKind),
         latencyMs: Date.now() - startedAt,
         inferredSystemQuery,
+        completionCategory: getInlineCompletionCategory(intentMode),
         intentMode,
     };
 }

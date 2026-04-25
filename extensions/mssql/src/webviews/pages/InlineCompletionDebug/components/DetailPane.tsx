@@ -195,7 +195,10 @@ export const InlineCompletionDebugDetailPane = ({
                             )}
                             {summaryRow(
                                 "Mode",
-                                `${event.intentMode ? "intent" : "continuation"} | intentMode=${event.intentMode}`,
+                                `${
+                                    event.completionCategory ??
+                                    (event.intentMode ? "intent" : "continuation")
+                                } | intentMode=${event.intentMode}`,
                                 classes,
                             )}
                             {summaryRow(
@@ -325,6 +328,10 @@ function buildTelemetryRows(event: InlineCompletionDebugEvent): Array<[string, s
         ["triggerKind", event.triggerKind],
         ["latencyBucket", bucketLatency(event.latencyMs)],
         ["inferredSystemQuery", String(event.inferredSystemQuery)],
+        [
+            "completionCategory",
+            event.completionCategory ?? (event.intentMode ? "intent" : "continuation"),
+        ],
         ["intentMode", String(event.intentMode)],
     ];
 }

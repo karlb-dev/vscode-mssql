@@ -6,9 +6,11 @@
 import * as vscode from "vscode";
 import { logger2 } from "../../models/logger2";
 import {
+    InlineCompletionCategory,
     InlineCompletionDebugEvent,
     InlineCompletionDebugOverrides,
     InlineCompletionDebugExportData,
+    inlineCompletionCategories,
 } from "../../sharedInterfaces/inlineCompletionDebug";
 
 const DEFAULT_EVENT_CAPACITY = 500;
@@ -21,6 +23,7 @@ const defaultOverrides: InlineCompletionDebugOverrides = {
     useSchemaContext: null,
     debounceMs: null,
     maxTokens: null,
+    enabledCategories: null,
     forceIntentMode: null,
     customSystemPrompt: null,
     allowAutomaticTriggers: null,
@@ -199,6 +202,7 @@ function normalizeOverrides(
         useSchemaContext: normalizeNullableBoolean(overrides.useSchemaContext),
         debounceMs: normalizeNullableNumber(overrides.debounceMs),
         maxTokens: normalizeNullableNumber(overrides.maxTokens),
+        enabledCategories: normalizeNullableCompletionCategories(overrides.enabledCategories),
         forceIntentMode: normalizeNullableBoolean(overrides.forceIntentMode),
         customSystemPrompt: normalizeNullableString(overrides.customSystemPrompt, true),
         allowAutomaticTriggers: normalizeNullableBoolean(overrides.allowAutomaticTriggers),
@@ -221,6 +225,11 @@ function normalizePartialOverrides(
     }
     if (Object.prototype.hasOwnProperty.call(overrides, "maxTokens")) {
         normalized.maxTokens = normalizeNullableNumber(overrides.maxTokens);
+    }
+    if (Object.prototype.hasOwnProperty.call(overrides, "enabledCategories")) {
+        normalized.enabledCategories = normalizeNullableCompletionCategories(
+            overrides.enabledCategories,
+        );
     }
     if (Object.prototype.hasOwnProperty.call(overrides, "forceIntentMode")) {
         normalized.forceIntentMode = normalizeNullableBoolean(overrides.forceIntentMode);
@@ -255,6 +264,23 @@ function normalizeNullableBoolean(value: boolean | null | undefined): boolean | 
 
 function normalizeNullableNumber(value: number | null | undefined): number | null {
     return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function normalizeNullableCompletionCategories(
+    value: InlineCompletionCategory[] | null | undefined,
+): InlineCompletionCategory[] | null {
+    if (!Array.isArray(value)) {
+        return null;
+    }
+
+    const enabled = new Set<InlineCompletionCategory>();
+    for (const category of value) {
+        if (inlineCompletionCategories.includes(category)) {
+            enabled.add(category);
+        }
+    }
+
+    return inlineCompletionCategories.filter((category) => enabled.has(category));
 }
 
 function truncateToBudget(

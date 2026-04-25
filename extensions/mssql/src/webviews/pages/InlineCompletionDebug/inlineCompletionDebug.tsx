@@ -289,7 +289,8 @@ function getFieldValueGetter(field: string):
         case "mode":
             return {
                 type: "string",
-                get: (event) => (event.intentMode ? "intent" : "continuation"),
+                get: (event) =>
+                    event.completionCategory ?? (event.intentMode ? "intent" : "continuation"),
             };
         case "trigger":
             return {

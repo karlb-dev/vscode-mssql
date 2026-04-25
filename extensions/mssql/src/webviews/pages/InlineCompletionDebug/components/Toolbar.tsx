@@ -30,7 +30,11 @@ import {
     EditRegular,
     FilterRegular,
 } from "@fluentui/react-icons";
-import { InlineCompletionDebugWebviewState } from "../../../../sharedInterfaces/inlineCompletionDebug";
+import {
+    InlineCompletionCategory,
+    InlineCompletionDebugWebviewState,
+    inlineCompletionCategories,
+} from "../../../../sharedInterfaces/inlineCompletionDebug";
 import { useInlineCompletionDebugContext } from "../inlineCompletionDebugStateProvider";
 
 const useStyles = makeStyles({
@@ -153,6 +157,7 @@ export const InlineCompletionDebugToolbar = ({
         state.overrides.useSchemaContext ?? state.defaults.useSchemaContext;
     const autoTriggerChecked =
         state.overrides.allowAutomaticTriggers ?? state.defaults.allowAutomaticTriggers;
+    const enabledCategories = state.overrides.enabledCategories ?? state.defaults.enabledCategories;
     const debounceValue = state.overrides.debounceMs ?? state.defaults.debounceMs;
     const customPromptIsActive = !!state.overrides.customSystemPrompt;
     const textureValue = useMemo(() => {
@@ -194,6 +199,26 @@ export const InlineCompletionDebugToolbar = ({
                 });
                 blurActiveElementSoon();
         }
+    };
+
+    const handleCategoryChange = (category: InlineCompletionCategory, enabled: boolean) => {
+        const next = new Set(enabledCategories);
+        if (enabled) {
+            next.add(category);
+        } else {
+            next.delete(category);
+        }
+
+        const orderedNext = inlineCompletionCategories.filter((item) => next.has(item));
+        updateOverrides({
+            enabledCategories: completionCategoriesEqual(
+                orderedNext,
+                state.defaults.enabledCategories,
+            )
+                ? null
+                : orderedNext,
+        });
+        blurActiveElementSoon();
     };
 
     return (
@@ -310,6 +335,20 @@ export const InlineCompletionDebugToolbar = ({
                     ) : null}
                 </div>
 
+                <Checkbox
+                    checked={enabledCategories.includes("continuation")}
+                    label="Continuation"
+                    className={classes.checkboxLabel}
+                    onChange={(_, data) => handleCategoryChange("continuation", !!data.checked)}
+                />
+
+                <Checkbox
+                    checked={enabledCategories.includes("intent")}
+                    label="Intent"
+                    className={classes.checkboxLabel}
+                    onChange={(_, data) => handleCategoryChange("intent", !!data.checked)}
+                />
+
                 <Field
                     label={`Eagerness ${debounceValue} ms`}
                     className={classes.sliderField}
@@ -425,4 +464,16 @@ function getDefaultModelLabel(state: InlineCompletionDebugWebviewState): string 
     const defaultModelFamily =
         state.defaults.effectiveModelFamily ?? state.defaults.configuredModelFamily;
     return defaultModelFamily ? `${defaultModelFamily} (default)` : "(default)";
+}
+
+function completionCategoriesEqual(
+    left: readonly InlineCompletionCategory[],
+    right: readonly InlineCompletionCategory[],
+): boolean {
+    return (
+        left.length === right.length &&
+        inlineCompletionCategories.every(
+            (category) => left.includes(category) === right.includes(category),
+        )
+    );
 }

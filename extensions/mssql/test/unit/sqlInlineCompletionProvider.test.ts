@@ -31,6 +31,7 @@ suite("SqlInlineCompletionProvider Tests", () => {
     let experimentalFeaturesEnabled: boolean;
     let inlineCompletionFeatureEnabled: boolean;
     let configuredModelFamily: string;
+    let enabledCategories: string[];
 
     setup(() => {
         sandbox = sinon.createSandbox();
@@ -38,6 +39,7 @@ suite("SqlInlineCompletionProvider Tests", () => {
         experimentalFeaturesEnabled = true;
         inlineCompletionFeatureEnabled = true;
         configuredModelFamily = "";
+        enabledCategories = ["continuation", "intent"];
 
         schemaContextService = sandbox.createStubInstance(SqlInlineCompletionSchemaContextService);
         extensionContext = {
@@ -60,6 +62,10 @@ suite("SqlInlineCompletionProvider Tests", () => {
 
                     if (key === Constants.configCopilotInlineCompletionsModelFamily) {
                         return configuredModelFamily;
+                    }
+
+                    if (key === Constants.configCopilotInlineCompletionsEnabledCategories) {
+                        return enabledCategories;
                     }
 
                     return defaultValue;
@@ -90,6 +96,7 @@ suite("SqlInlineCompletionProvider Tests", () => {
             useSchemaContext: null,
             debounceMs: null,
             maxTokens: null,
+            enabledCategories: null,
             forceIntentMode: null,
             customSystemPrompt: null,
             allowAutomaticTriggers: null,
@@ -480,6 +487,7 @@ ORDER BY qs.total_worker_time DESC;`,
         const event = inlineCompletionDebugStore.getEvents()[0];
         expect(event.inputTokens).to.equal(20);
         expect(event.outputTokens).to.equal(3);
+        expect(event.completionCategory).to.equal("continuation");
     });
 
     test("returns no completions when no Copilot language model is available", async () => {
@@ -521,6 +529,55 @@ ORDER BY qs.total_worker_time DESC;`,
         const items = await provider.provideInlineCompletionItems(
             createTestDocument("SELECT", "file:///query.sql"),
             new vscode.Position(0, "SELECT".length),
+            {
+                triggerKind: vscode.InlineCompletionTriggerKind.Invoke,
+            } as vscode.InlineCompletionContext,
+            { isCancellationRequested: false } as vscode.CancellationToken,
+        );
+
+        expect(items).to.deep.equal([]);
+        expect(sendRequestStub).to.not.have.been.called;
+    });
+
+    test("returns no completions when the continuation category is disabled", async () => {
+        enabledCategories = ["intent"];
+
+        const items = await provider.provideInlineCompletionItems(
+            createTestDocument("SELECT *", "file:///query.sql"),
+            new vscode.Position(0, "SELECT *".length),
+            {
+                triggerKind: vscode.InlineCompletionTriggerKind.Invoke,
+            } as vscode.InlineCompletionContext,
+            { isCancellationRequested: false } as vscode.CancellationToken,
+        );
+
+        expect(items).to.deep.equal([]);
+        expect(sendRequestStub).to.not.have.been.called;
+    });
+
+    test("returns no completions when the intent category is disabled", async () => {
+        enabledCategories = ["continuation"];
+
+        const line = "-- Write a query to show all customers";
+        const items = await provider.provideInlineCompletionItems(
+            createTestDocument(line, "file:///query.sql"),
+            new vscode.Position(0, line.length),
+            {
+                triggerKind: vscode.InlineCompletionTriggerKind.Invoke,
+            } as vscode.InlineCompletionContext,
+            { isCancellationRequested: false } as vscode.CancellationToken,
+        );
+
+        expect(items).to.deep.equal([]);
+        expect(sendRequestStub).to.not.have.been.called;
+    });
+
+    test("uses the runtime category override before requesting a model", async () => {
+        inlineCompletionDebugStore.updateOverrides({ enabledCategories: ["intent"] });
+
+        const items = await provider.provideInlineCompletionItems(
+            createTestDocument("SELECT *", "file:///query.sql"),
+            new vscode.Position(0, "SELECT *".length),
             {
                 triggerKind: vscode.InlineCompletionTriggerKind.Invoke,
             } as vscode.InlineCompletionContext,

@@ -67,6 +67,13 @@ Inline completion queries vendors from `mssql.copilot.inlineCompletions.modelVen
 
 `mssql.copilot.inlineCompletions.modelFamily` still applies first. When no exact family is available, the extension uses its built-in family preference list while preserving vendor priority.
 
+Inline completion has two request categories:
+
+- `continuation`: cursor-continuation ghost text for the current SQL statement.
+- `intent`: comment-to-query completions when a natural-language SQL request is directly above the cursor.
+
+`mssql.copilot.inlineCompletions.enabledCategories` defaults to both categories. Set it to `["continuation"]`, `["intent"]`, or `[]` to narrow or disable category handling without changing provider registration.
+
 ## Limitations
 
 - Providers are text-in/text-out only.

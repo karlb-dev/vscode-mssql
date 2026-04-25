@@ -2568,6 +2568,23 @@
                     "description": "Language model vendors to query for MSSQL inline SQL completion, in priority order.",
                     "scope": "window"
                 },
+                "mssql.copilot.inlineCompletions.enabledCategories": {
+                    "type": "array",
+                    "default": [
+                        "continuation",
+                        "intent"
+                    ],
+                    "items": {
+                        "type": "string",
+                        "enum": [
+                            "continuation",
+                            "intent"
+                        ]
+                    },
+                    "uniqueItems": true,
+                    "description": "%mssql.copilot.inlineCompletions.enabledCategories.description%",
+                    "scope": "window"
+                },
                 "mssql.copilot.inlineCompletions.debug.recordWhenClosed": {
                     "type": "boolean",
                     "default": false,

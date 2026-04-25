@@ -14,6 +14,10 @@ export type InlineCompletionResult =
 
 export type InlineCompletionDebugEventResult = InlineCompletionResult | "cancelled";
 
+export const inlineCompletionCategories = ["continuation", "intent"] as const;
+
+export type InlineCompletionCategory = (typeof inlineCompletionCategories)[number];
+
 export interface InlineCompletionDebugPromptMessage {
     role: "user" | "assistant";
     content: string;
@@ -24,6 +28,7 @@ export interface InlineCompletionDebugOverridesApplied {
     useSchemaContext?: boolean;
     debounceMs?: number;
     maxTokens?: number;
+    enabledCategories?: InlineCompletionCategory[];
     customSystemPromptUsed: boolean;
 }
 
@@ -36,6 +41,7 @@ export interface InlineCompletionDebugEvent {
     column: number;
     triggerKind: "automatic" | "invoke";
     explicitFromUser: boolean;
+    completionCategory: InlineCompletionCategory;
     intentMode: boolean;
     inferredSystemQuery: boolean;
     modelFamily: string | undefined;
@@ -70,6 +76,7 @@ export interface InlineCompletionDebugOverrides {
     useSchemaContext: boolean | null;
     debounceMs: number | null;
     maxTokens: number | null;
+    enabledCategories: InlineCompletionCategory[] | null;
     forceIntentMode: boolean | null;
     customSystemPrompt: string | null;
     allowAutomaticTriggers: boolean | null;
@@ -90,6 +97,7 @@ export interface InlineCompletionDebugDefaults {
     debounceMs: number;
     continuationMaxTokens: number;
     intentMaxTokens: number;
+    enabledCategories: InlineCompletionCategory[];
     allowAutomaticTriggers: boolean;
 }
 
