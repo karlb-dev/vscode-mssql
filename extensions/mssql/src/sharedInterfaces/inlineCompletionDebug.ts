@@ -109,6 +109,8 @@ export interface InlineCompletionDebugModelOption {
 
 export interface InlineCompletionDebugDefaults {
     configuredModelSelector?: string;
+    configuredProfileId?: InlineCompletionDebugProfileId;
+    effectiveProfileId?: InlineCompletionDebugProfileId;
     effectiveModelSelector?: string;
     effectiveModelLabel?: string;
     useSchemaContext: boolean;

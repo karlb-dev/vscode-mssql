@@ -307,6 +307,7 @@ export const configAutoDisableNonTSqlLanguageService = "mssql.autoDisableNonTSql
 export const copilotDebugLogging = "mssql.copilotDebugLogging";
 export const configCopilotInlineCompletionsUseSchemaContext =
     "mssql.copilot.inlineCompletions.useSchemaContext";
+export const configCopilotInlineCompletionsProfile = "mssql.copilot.inlineCompletions.profile";
 export const configCopilotInlineCompletionsModelFamily =
     "mssql.copilot.inlineCompletions.modelFamily";
 export const configCopilotInlineCompletionsModelVendors =

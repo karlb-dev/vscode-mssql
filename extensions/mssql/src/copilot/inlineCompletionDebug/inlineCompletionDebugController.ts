@@ -39,6 +39,7 @@ import {
 import {
     createInlineCompletionDebugPresetOverrides,
     getInlineCompletionDebugPresetProfile,
+    getInlineCompletionPresetProfileId,
     inlineCompletionDebugCustomProfileId,
     inlineCompletionDebugProfileOptions,
     InlineCompletionModelPreference,
@@ -137,11 +138,13 @@ export class InlineCompletionDebugController extends WebviewPanelController<
                     e.affectsConfiguration(
                         Constants.configCopilotInlineCompletionsDebugRecordWhenClosed,
                     ) ||
+                    e.affectsConfiguration(Constants.configCopilotInlineCompletionsProfile) ||
                     e.affectsConfiguration(Constants.configCopilotInlineCompletionsUseSchemaContext)
                 ) {
                     this.updateState(this.createState());
                 }
                 if (
+                    e.affectsConfiguration(Constants.configCopilotInlineCompletionsProfile) ||
                     e.affectsConfiguration(Constants.configCopilotInlineCompletionsModelFamily) ||
                     e.affectsConfiguration(Constants.configCopilotInlineCompletionsModelVendors)
                 ) {
@@ -329,7 +332,9 @@ export class InlineCompletionDebugController extends WebviewPanelController<
     private prepareUserOverrideUpdate(
         update: Partial<InlineCompletionDebugOverrides>,
     ): Partial<InlineCompletionDebugOverrides> {
-        const current = inlineCompletionDebugStore.getOverrides();
+        const current = getEffectiveOverridesWithConfiguredProfile(
+            inlineCompletionDebugStore.getOverrides(),
+        );
         if (!this.shouldSwitchProfileToCustom(current, update)) {
             return update;
         }
@@ -345,7 +350,11 @@ export class InlineCompletionDebugController extends WebviewPanelController<
         profileId: InlineCompletionDebugProfileId,
     ): Partial<InlineCompletionDebugOverrides> {
         if (profileId === inlineCompletionDebugCustomProfileId) {
-            return this.materializeProfileOverrides(inlineCompletionDebugStore.getOverrides());
+            return this.materializeProfileOverrides(
+                getEffectiveOverridesWithConfiguredProfile(
+                    inlineCompletionDebugStore.getOverrides(),
+                ),
+            );
         }
 
         return createInlineCompletionDebugPresetOverrides(profileId);
@@ -809,7 +818,9 @@ function createState(options: {
     customPromptLastSavedAt: number | undefined;
 }): InlineCompletionDebugWebviewState {
     const overrides = inlineCompletionDebugStore.getOverrides();
-    const profile = getInlineCompletionDebugPresetProfile(overrides.profileId);
+    const configuredProfileId = getConfiguredInlineCompletionProfileId();
+    const effectiveProfileId = overrides.profileId ?? configuredProfileId;
+    const profile = getInlineCompletionDebugPresetProfile(effectiveProfileId);
     const configuredModelSelector = getConfiguredModelSelector();
     const effectiveOption =
         (profile ? undefined : options.effectiveDefaultModelOption) ??
@@ -823,6 +834,8 @@ function createState(options: {
         overrides,
         defaults: {
             configuredModelSelector,
+            configuredProfileId,
+            effectiveProfileId,
             effectiveModelSelector: effectiveOption?.selector,
             effectiveModelLabel: effectiveOption?.label,
             useSchemaContext: getConfiguredUseSchemaContext(),
@@ -886,6 +899,26 @@ function getConfiguredModelSelector(): string | undefined {
             .get<string>(Constants.configCopilotInlineCompletionsModelFamily, "")
             ?.trim() || undefined
     );
+}
+
+function getConfiguredInlineCompletionProfileId(): InlineCompletionDebugProfileId | undefined {
+    const configured = vscode.workspace
+        .getConfiguration()
+        .get<string>(Constants.configCopilotInlineCompletionsProfile, "default");
+    return getInlineCompletionPresetProfileId(configured);
+}
+
+function getEffectiveOverridesWithConfiguredProfile(
+    overrides: InlineCompletionDebugOverrides,
+): InlineCompletionDebugOverrides {
+    if (overrides.profileId) {
+        return overrides;
+    }
+
+    return {
+        ...overrides,
+        profileId: getConfiguredInlineCompletionProfileId() ?? null,
+    };
 }
 
 function getConfiguredUseSchemaContext(): boolean {

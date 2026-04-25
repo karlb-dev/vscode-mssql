@@ -13,6 +13,7 @@ import { getErrorMessage } from "../utils/utils";
 import {
     defaultInlineCompletionModelPreference,
     getInlineCompletionDebugPresetProfile,
+    getInlineCompletionPresetProfileId,
     InlineCompletionModelPreference,
 } from "./inlineCompletionDebug/inlineCompletionDebugProfiles";
 import { inlineCompletionDebugStore } from "./inlineCompletionDebug/inlineCompletionDebugStore";
@@ -98,6 +99,7 @@ export class SqlInlineCompletionProvider
             }),
             vscode.workspace.onDidChangeConfiguration((e) => {
                 if (
+                    e.affectsConfiguration(Constants.configCopilotInlineCompletionsProfile) ||
                     e.affectsConfiguration(Constants.configCopilotInlineCompletionsModelFamily) ||
                     e.affectsConfiguration(Constants.configCopilotInlineCompletionsModelVendors)
                 ) {
@@ -133,7 +135,10 @@ export class SqlInlineCompletionProvider
 
         const triggerKind = context.triggerKind;
         const overrides = inlineCompletionDebugStore.getOverrides();
-        const profile = getInlineCompletionDebugPresetProfile(overrides.profileId);
+        const configuredProfileId = getConfiguredInlineCompletionProfileId();
+        const profile = getInlineCompletionDebugPresetProfile(
+            overrides.profileId ?? configuredProfileId,
+        );
         const line = document.lineAt(position.line);
         const linePrefix = line.text.slice(0, position.character);
         const lineSuffix = line.text.slice(position.character);
@@ -265,7 +270,7 @@ export class SqlInlineCompletionProvider
                         ? "defined"
                         : "undefined",
                     "context.triggerKind": context.triggerKind,
-                    profileId: overrides.profileId,
+                    profileId: overrides.profileId ?? configuredProfileId,
                     "document.languageId": document.languageId,
                     "position.line": position.line,
                     "position.character": position.character,
@@ -608,6 +613,13 @@ export class SqlInlineCompletionProvider
         this._cachedModelInitialized = false;
         this._cachedModelSelectorKey = undefined;
     }
+}
+
+function getConfiguredInlineCompletionProfileId() {
+    const configured = vscode.workspace
+        .getConfiguration()
+        .get<string>(Constants.configCopilotInlineCompletionsProfile, "default");
+    return getInlineCompletionPresetProfileId(configured);
 }
 
 export function getInlineCompletionCategory(intentMode: boolean): InlineCompletionCategory {

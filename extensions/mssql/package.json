@@ -2521,6 +2521,24 @@
                     "description": "%mssql.copilot.inlineCompletions.useSchemaContext.description%",
                     "scope": "window"
                 },
+                "mssql.copilot.inlineCompletions.profile": {
+                    "type": "string",
+                    "default": "default",
+                    "enum": [
+                        "default",
+                        "focused",
+                        "balanced",
+                        "broad"
+                    ],
+                    "enumDescriptions": [
+                        "Use the standard inline completion behavior.",
+                        "Intent-only completions with the lowest automatic request volume.",
+                        "Intent-only completions with a moderate automatic debounce.",
+                        "Intent and continuation completions with the quickest debounce."
+                    ],
+                    "description": "%mssql.copilot.inlineCompletions.profile.description%",
+                    "scope": "window"
+                },
                 "mssql.copilot.inlineCompletions.modelFamily": {
                     "type": "string",
                     "default": "claude-sonnet-4-5",

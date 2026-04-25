@@ -24,9 +24,10 @@ export interface InlineCompletionDebugProfileDefinition extends InlineCompletion
 }
 
 export const inlineCompletionDebugCustomProfileId = "custom";
+export const inlineCompletionConfiguredDefaultProfileId = "default";
 
 export const defaultInlineCompletionModelPreference: InlineCompletionModelPreference = {
-    providerVendors: ["copilot", "anthropic-api", "openai-api"],
+    providerVendors: ["anthropic-api", "openai-api", "copilot"],
     familyPatterns: [
         /^claude-sonnet/i,
         /^claude-opus/i,
@@ -120,6 +121,16 @@ export function getInlineCompletionDebugPresetProfile(
     }
 
     return inlineCompletionDebugPresetProfiles.find((profile) => profile.id === profileId);
+}
+
+export function getInlineCompletionPresetProfileId(
+    value: unknown,
+): InlineCompletionDebugProfileId | undefined {
+    if (typeof value !== "string") {
+        return undefined;
+    }
+
+    return getInlineCompletionDebugPresetProfile(value as InlineCompletionDebugProfileId)?.id;
 }
 
 export function isInlineCompletionDebugProfileId(

@@ -153,7 +153,8 @@ export const InlineCompletionDebugToolbar = ({
         });
     }, []);
 
-    const selectedProfileOption = state.overrides.profileId ?? "custom";
+    const selectedProfileOption =
+        state.overrides.profileId ?? state.defaults.effectiveProfileId ?? "custom";
     const selectedProfile = state.profiles.find((profile) => profile.id === selectedProfileOption);
     const selectedProfileDisplayValue = selectedProfile?.label ?? "Custom";
     const selectedModelOption = state.overrides.modelSelector ?? "__default__";
@@ -498,7 +499,7 @@ export const InlineCompletionDebugToolbar = ({
 
 function getDefaultModelLabel(state: InlineCompletionDebugWebviewState): string {
     const profile = state.profiles.find(
-        (item) => item.id === state.overrides.profileId && item.id !== "custom",
+        (item) => item.id === state.defaults.effectiveProfileId && item.id !== "custom",
     );
     const suffix = profile ? `${profile.label} default` : "default";
     const label = state.defaults.effectiveModelLabel;

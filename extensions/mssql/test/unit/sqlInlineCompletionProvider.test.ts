@@ -30,6 +30,7 @@ suite("SqlInlineCompletionProvider Tests", () => {
     let countTokensStub: sinon.SinonStub;
     let experimentalFeaturesEnabled: boolean;
     let inlineCompletionFeatureEnabled: boolean;
+    let configuredProfile: string;
     let configuredModelFamily: string;
     let enabledCategories: string[];
 
@@ -38,6 +39,7 @@ suite("SqlInlineCompletionProvider Tests", () => {
         stubTelemetry(sandbox);
         experimentalFeaturesEnabled = true;
         inlineCompletionFeatureEnabled = true;
+        configuredProfile = "default";
         configuredModelFamily = "";
         enabledCategories = ["continuation", "intent"];
 
@@ -58,6 +60,10 @@ suite("SqlInlineCompletionProvider Tests", () => {
 
                     if (key === Constants.configCopilotInlineCompletionsUseSchemaContext) {
                         return inlineCompletionFeatureEnabled;
+                    }
+
+                    if (key === Constants.configCopilotInlineCompletionsProfile) {
+                        return configuredProfile;
                     }
 
                     if (key === Constants.configCopilotInlineCompletionsModelFamily) {
@@ -603,6 +609,40 @@ ORDER BY qs.total_worker_time DESC;`,
 
         expect(items).to.deep.equal([]);
         expect(sendRequestStub).to.not.have.been.called;
+    });
+
+    test("uses the configured default profile categories before requesting a model", async () => {
+        configuredProfile = "focused";
+
+        const items = await provider.provideInlineCompletionItems(
+            createTestDocument("SELECT *", "file:///query.sql"),
+            new vscode.Position(0, "SELECT *".length),
+            {
+                triggerKind: vscode.InlineCompletionTriggerKind.Invoke,
+            } as vscode.InlineCompletionContext,
+            { isCancellationRequested: false } as vscode.CancellationToken,
+        );
+
+        expect(items).to.deep.equal([]);
+        expect(sendRequestStub).to.not.have.been.called;
+    });
+
+    test("uses runtime category overrides over the configured default profile", async () => {
+        configuredProfile = "focused";
+        inlineCompletionDebugStore.updateOverrides({ enabledCategories: ["continuation"] });
+        schemaContextService.getSchemaContext.resolves(undefined);
+
+        const items = await provider.provideInlineCompletionItems(
+            createTestDocument("SELECT *", "file:///query.sql"),
+            new vscode.Position(0, "SELECT *".length),
+            {
+                triggerKind: vscode.InlineCompletionTriggerKind.Invoke,
+            } as vscode.InlineCompletionContext,
+            { isCancellationRequested: false } as vscode.CancellationToken,
+        );
+
+        expect(items).to.have.lengthOf(1);
+        expect(sendRequestStub).to.have.been.calledOnce;
     });
 
     test("returns no completions when the cancellation token fires during the debounce wait", async () => {

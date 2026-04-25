@@ -43,7 +43,14 @@ Inline completion queries vendors from `mssql.copilot.inlineCompletions.modelVen
 ["copilot", "anthropic-api", "openai-api"]
 ```
 
-`mssql.copilot.inlineCompletions.modelFamily` still applies first. When no exact family is available, the extension uses its built-in family preference list while preserving vendor priority.
+`mssql.copilot.inlineCompletions.modelFamily` applies when the inline completion profile is `default`. Preset profiles use their own model preference, category, and debounce defaults.
+
+`mssql.copilot.inlineCompletions.profile` controls the default request profile:
+
+- `default`: standard inline completion behavior.
+- `focused`: intent-only completions with the lowest automatic request volume.
+- `balanced`: intent-only completions with a moderate automatic debounce.
+- `broad`: intent and continuation completions with the quickest debounce.
 
 Inline completion has two request categories:
 
