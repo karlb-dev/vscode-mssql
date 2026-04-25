@@ -8,17 +8,18 @@ import * as Constants from "../../constants/constants";
 import { TelemetryActions, TelemetryViews } from "../../sharedInterfaces/telemetry";
 import { sendActionEvent } from "../../telemetry/telemetry";
 
-export type SdkProviderKind = "anthropic" | "openai";
+export type SdkProviderKind = "anthropic" | "openai" | "xai";
+export type SdkProviderVendor = "anthropic-api" | "openai-api" | "xai-api";
 
 export interface SdkApiKeyProviderInfo {
     kind: SdkProviderKind;
-    vendor: "anthropic-api" | "openai-api";
-    label: "Anthropic" | "OpenAI";
-    envVarName: "ANTHROPIC_API_KEY" | "OPENAI_API_KEY";
+    vendor: SdkProviderVendor;
+    label: "Anthropic" | "OpenAI" | "xAI";
+    envVarName: "ANTHROPIC_API_KEY" | "OPENAI_API_KEY" | "XAI_API_KEY";
     envSetting: string;
     setCommand: string;
     clearCommand: string;
-    keyPrefix: string;
+    keyPrefixes: readonly string[];
 }
 
 export const sdkApiKeyProviders: Record<SdkProviderKind, SdkApiKeyProviderInfo> = {
@@ -30,7 +31,7 @@ export const sdkApiKeyProviders: Record<SdkProviderKind, SdkApiKeyProviderInfo> 
         envSetting: Constants.configCopilotSdkProvidersAnthropicEnv,
         setCommand: Constants.cmdSetAnthropicSdkLanguageModelApiKey,
         clearCommand: Constants.cmdClearAnthropicSdkLanguageModelApiKey,
-        keyPrefix: "sk-ant-",
+        keyPrefixes: ["sk-ant-"],
     },
     openai: {
         kind: "openai",
@@ -40,7 +41,17 @@ export const sdkApiKeyProviders: Record<SdkProviderKind, SdkApiKeyProviderInfo> 
         envSetting: Constants.configCopilotSdkProvidersOpenAiEnv,
         setCommand: Constants.cmdSetOpenAiSdkLanguageModelApiKey,
         clearCommand: Constants.cmdClearOpenAiSdkLanguageModelApiKey,
-        keyPrefix: "sk-",
+        keyPrefixes: ["sk-"],
+    },
+    xai: {
+        kind: "xai",
+        vendor: "xai-api",
+        label: "xAI",
+        envVarName: "XAI_API_KEY",
+        envSetting: Constants.configCopilotSdkProvidersXAiEnv,
+        setCommand: Constants.cmdSetXAiSdkLanguageModelApiKey,
+        clearCommand: Constants.cmdClearXAiSdkLanguageModelApiKey,
+        keyPrefixes: [],
     },
 };
 
@@ -71,6 +82,10 @@ export class SdkApiKeyResolver {
         return this.resolveProvider("openai");
     }
 
+    public resolveXAI(): Promise<string | undefined> {
+        return this.resolveProvider("xai");
+    }
+
     public async resolveProvider(kind: SdkProviderKind): Promise<string | undefined> {
         const info = sdkApiKeyProviders[kind];
         const secret = await this._context.secrets?.get(getSecretStorageKey(kind));
@@ -95,12 +110,20 @@ export class SdkApiKeyResolver {
         return this.setApiKey("openai", apiKey);
     }
 
+    public setXAIApiKey(apiKey: string): Promise<void> {
+        return this.setApiKey("xai", apiKey);
+    }
+
     public clearAnthropicApiKey(): Promise<void> {
         return this.clearApiKey("anthropic");
     }
 
     public clearOpenAIApiKey(): Promise<void> {
         return this.clearApiKey("openai");
+    }
+
+    public clearXAIApiKey(): Promise<void> {
+        return this.clearApiKey("xai");
     }
 
     public async setApiKey(kind: SdkProviderKind, apiKey: string): Promise<void> {
@@ -153,6 +176,9 @@ function kindFromSecretKey(key: string): SdkProviderKind | undefined {
     }
     if (key === getSecretStorageKey("openai")) {
         return "openai";
+    }
+    if (key === getSecretStorageKey("xai")) {
+        return "xai";
     }
     return undefined;
 }

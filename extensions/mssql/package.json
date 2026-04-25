@@ -40,7 +40,8 @@
         "onCommand:mssql.loadCompletionExtension",
         "onNotebook:jupyter-notebook",
         "onLanguageModelChatProvider:anthropic-api",
-        "onLanguageModelChatProvider:openai-api"
+        "onLanguageModelChatProvider:openai-api",
+        "onLanguageModelChatProvider:xai-api"
     ],
     "main": "./dist/extension",
     "l10n": "./l10n",
@@ -332,6 +333,13 @@
                 "label": "OpenAI API",
                 "displayName": "OpenAI API",
                 "managementCommand": "mssql.copilot.sdkProviders.openai.setApiKey"
+            },
+            {
+                "id": "xai-api",
+                "vendor": "xai-api",
+                "label": "xAI API",
+                "displayName": "xAI API",
+                "managementCommand": "mssql.copilot.sdkProviders.xai.setApiKey"
             }
         ],
         "customEditors": [
@@ -1556,6 +1564,16 @@
                 "category": "MS SQL"
             },
             {
+                "command": "mssql.copilot.sdkProviders.xai.setApiKey",
+                "title": "Set xAI API Key",
+                "category": "MS SQL"
+            },
+            {
+                "command": "mssql.copilot.sdkProviders.xai.clearApiKey",
+                "title": "Clear xAI API Key",
+                "category": "MS SQL"
+            },
+            {
                 "command": "mssql.connectionSharing.editConnectionSharingPermissions",
                 "title": "%mssql.connectionSharing.editConnectionSharingPermissions%",
                 "category": "MSSQL"
@@ -2550,7 +2568,8 @@
                     "default": [
                         "copilot",
                         "anthropic-api",
-                        "openai-api"
+                        "openai-api",
+                        "xai-api"
                     ],
                     "items": {
                         "type": "string"
@@ -2701,6 +2720,67 @@
                         "type": "string"
                     },
                     "description": "Environment fallback values for the OpenAI API provider. OPENAI_API_KEY may be set to an API key or to the name of an existing process environment variable.",
+                    "scope": "application"
+                },
+                "mssql.copilot.sdkProviders.xai.enabled": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Register the xAI API language model provider. Reload VS Code after changing this setting.",
+                    "scope": "application"
+                },
+                "mssql.copilot.sdkProviders.xai.additionalModels": {
+                    "type": "array",
+                    "default": [],
+                    "items": {
+                        "type": "object",
+                        "required": [
+                            "id",
+                            "displayName",
+                            "family"
+                        ],
+                        "properties": {
+                            "id": {
+                                "type": "string"
+                            },
+                            "displayName": {
+                                "type": "string"
+                            },
+                            "family": {
+                                "type": "string"
+                            },
+                            "version": {
+                                "type": "string"
+                            },
+                            "maxInputTokens": {
+                                "type": "number"
+                            },
+                            "maxOutputTokens": {
+                                "type": "number"
+                            }
+                        }
+                    },
+                    "description": "Additional xAI API model definitions beyond the built-in catalog.",
+                    "scope": "application"
+                },
+                "mssql.copilot.sdkProviders.xai.baseUrl": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Override the xAI API base URL for proxies or gateways. Leave empty to use https://api.x.ai/v1.",
+                    "scope": "application"
+                },
+                "mssql.copilot.sdkProviders.xai.timeout": {
+                    "type": "number",
+                    "default": 60000,
+                    "description": "xAI API request timeout in milliseconds.",
+                    "scope": "application"
+                },
+                "mssql.copilot.sdkProviders.xai.env": {
+                    "type": "object",
+                    "default": {},
+                    "additionalProperties": {
+                        "type": "string"
+                    },
+                    "description": "Environment fallback values for the xAI API provider. XAI_API_KEY may be set to an API key or to the name of an existing process environment variable.",
                     "scope": "application"
                 },
                 "mssql.ignorePlatformWarning": {

@@ -27,13 +27,17 @@ export const inlineCompletionDebugCustomProfileId = "custom";
 export const inlineCompletionConfiguredDefaultProfileId = "default";
 
 export const defaultInlineCompletionModelPreference: InlineCompletionModelPreference = {
-    providerVendors: ["anthropic-api", "openai-api", "copilot"],
+    providerVendors: ["copilot", "anthropic-api", "openai-api", "xai-api"],
     familyPatterns: [
         /^claude-sonnet/i,
         /^claude-opus/i,
         /^gpt-5.*codex/i,
         /^gpt-5(?!.*(mini|codex))/i,
         /^gpt-5.*mini/i,
+        /^grok-4\.1.*fast/i,
+        /^grok-4\.20/i,
+        /^grok-4/i,
+        /^grok.*mini/i,
         /^gpt-4o(?!-mini)/i,
         /^gpt-4o-mini/i,
         /^claude.*haiku/i,
@@ -46,6 +50,8 @@ const lowTokenModelPreference: InlineCompletionModelPreference = {
     familyPatterns: [
         /^claude.*haiku/i,
         /^gpt-5.*mini/i,
+        /^grok-4\.1.*fast/i,
+        /^grok.*mini/i,
         /^gpt-4o-mini/i,
         /^claude-sonnet/i,
         /^gpt-5(?!.*(mini|codex))/i,
@@ -58,7 +64,11 @@ const middleModelPreference: InlineCompletionModelPreference = {
     familyPatterns: [
         /^claude-sonnet/i,
         /^gpt-5(?!.*(mini|codex))/i,
+        /^grok-4\.1.*fast/i,
+        /^grok-4\.20/i,
+        /^grok-4/i,
         /^gpt-5.*mini/i,
+        /^grok.*mini/i,
         /^claude.*haiku/i,
         /^gpt-4o(?!-mini)/i,
         /^gpt-4o-mini/i,

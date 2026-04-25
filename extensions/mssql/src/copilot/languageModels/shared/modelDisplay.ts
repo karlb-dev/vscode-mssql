@@ -44,6 +44,8 @@ export function formatProviderLabel(vendor: string): string {
             return "Anthropic API";
         case "openai-api":
             return "OpenAI API";
+        case "xai-api":
+            return "xAI API";
         default:
             return vendor;
     }

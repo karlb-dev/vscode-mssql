@@ -6,7 +6,12 @@
 import * as vscode from "vscode";
 import * as Constants from "../../../constants/constants";
 
-export const defaultInlineCompletionModelVendors = ["copilot", "anthropic-api", "openai-api"];
+export const defaultInlineCompletionModelVendors = [
+    "copilot",
+    "anthropic-api",
+    "openai-api",
+    "xai-api",
+];
 
 export function getConfiguredInlineCompletionModelVendors(): string[] {
     const configured = vscode.workspace

@@ -157,6 +157,8 @@ export const cmdClearAnthropicSdkLanguageModelApiKey =
     "mssql.copilot.sdkProviders.anthropic.clearApiKey";
 export const cmdSetOpenAiSdkLanguageModelApiKey = "mssql.copilot.sdkProviders.openai.setApiKey";
 export const cmdClearOpenAiSdkLanguageModelApiKey = "mssql.copilot.sdkProviders.openai.clearApiKey";
+export const cmdSetXAiSdkLanguageModelApiKey = "mssql.copilot.sdkProviders.xai.setApiKey";
+export const cmdClearXAiSdkLanguageModelApiKey = "mssql.copilot.sdkProviders.xai.clearApiKey";
 export const cmdOpenGithubChat = "workbench.action.chat.open";
 export const cmdBackupDatabase = "mssql.backupDatabase";
 export const cmdRestoreDatabase = "mssql.restoreDatabase";
@@ -331,6 +333,12 @@ export const configCopilotSdkProvidersOpenAiAdditionalModels =
 export const configCopilotSdkProvidersOpenAiBaseUrl = "mssql.copilot.sdkProviders.openai.baseUrl";
 export const configCopilotSdkProvidersOpenAiTimeout = "mssql.copilot.sdkProviders.openai.timeout";
 export const configCopilotSdkProvidersOpenAiEnv = "mssql.copilot.sdkProviders.openai.env";
+export const configCopilotSdkProvidersXAiEnabled = "mssql.copilot.sdkProviders.xai.enabled";
+export const configCopilotSdkProvidersXAiAdditionalModels =
+    "mssql.copilot.sdkProviders.xai.additionalModels";
+export const configCopilotSdkProvidersXAiBaseUrl = "mssql.copilot.sdkProviders.xai.baseUrl";
+export const configCopilotSdkProvidersXAiTimeout = "mssql.copilot.sdkProviders.xai.timeout";
+export const configCopilotSdkProvidersXAiEnv = "mssql.copilot.sdkProviders.xai.env";
 export const configSelectedAzureSubscriptions = "mssql.selectedAzureSubscriptions";
 export const configShowActiveConnectionAsCodeLensSuggestion =
     "mssql.query.showActiveConnectionAsCodeLensSuggestion";

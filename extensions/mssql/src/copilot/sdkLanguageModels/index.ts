@@ -15,6 +15,7 @@ import {
     SdkProviderKind,
 } from "./apiKeyResolution";
 import { OpenAiSdkLanguageModelProvider } from "./openaiSdkLanguageModelProvider";
+import { XAiSdkLanguageModelProvider } from "./xaiSdkLanguageModelProvider";
 
 type RegisterLanguageModelChatProvider = (vendor: string, provider: unknown) => vscode.Disposable;
 
@@ -35,6 +36,12 @@ export function registerSdkLanguageModelProviders(context: vscode.ExtensionConte
         ),
         vscode.commands.registerCommand(Constants.cmdClearOpenAiSdkLanguageModelApiKey, () =>
             clearApiKey(apiKeys, "openai"),
+        ),
+        vscode.commands.registerCommand(Constants.cmdSetXAiSdkLanguageModelApiKey, () =>
+            promptAndStoreApiKey(apiKeys, "xai"),
+        ),
+        vscode.commands.registerCommand(Constants.cmdClearXAiSdkLanguageModelApiKey, () =>
+            clearApiKey(apiKeys, "xai"),
         ),
     );
 
@@ -57,6 +64,11 @@ export function registerSdkLanguageModelProviders(context: vscode.ExtensionConte
     if (isSettingEnabled(Constants.configCopilotSdkProvidersOpenAiEnabled, true)) {
         const provider = new OpenAiSdkLanguageModelProvider(context, { apiKeys });
         context.subscriptions.push(registerLanguageModelChatProvider("openai-api", provider));
+    }
+
+    if (isSettingEnabled(Constants.configCopilotSdkProvidersXAiEnabled, true)) {
+        const provider = new XAiSdkLanguageModelProvider(context, { apiKeys });
+        context.subscriptions.push(registerLanguageModelChatProvider("xai-api", provider));
     }
 
     void showNoExternalProviderAvailableMessage(context, apiKeys);
@@ -94,8 +106,11 @@ function validateApiKeyInput(info: SdkApiKeyProviderInfo, input: string): string
     if (!trimmed) {
         return `${info.label} API key is required.`;
     }
-    if (!trimmed.startsWith(info.keyPrefix)) {
-        return `${info.label} API keys should start with ${info.keyPrefix}.`;
+    if (
+        info.keyPrefixes.length > 0 &&
+        !info.keyPrefixes.some((prefix) => trimmed.startsWith(prefix))
+    ) {
+        return `${info.label} API keys should start with ${info.keyPrefixes.join(" or ")}.`;
     }
     return undefined;
 }
@@ -112,9 +127,10 @@ async function showNoExternalProviderAvailableMessage(
         return;
     }
 
-    const [anthropicKey, openAiKey] = await Promise.all([
+    const [anthropicKey, openAiKey, xAiKey] = await Promise.all([
         apiKeys.resolveAnthropic(),
         apiKeys.resolveOpenAI(),
+        apiKeys.resolveXAI(),
     ]);
     let copilotModels: vscode.LanguageModelChat[] = [];
     try {
@@ -122,17 +138,19 @@ async function showNoExternalProviderAvailableMessage(
     } catch {
         copilotModels = [];
     }
-    if (anthropicKey || openAiKey || copilotModels.length > 0) {
+    if (anthropicKey || openAiKey || xAiKey || copilotModels.length > 0) {
         return;
     }
 
     const setAnthropic = "Set Anthropic API Key";
     const setOpenAi = "Set OpenAI API Key";
+    const setXAi = "Set xAI API Key";
     const dontShow = "Don't show again";
     const selection = await vscode.window.showInformationMessage(
         "MSSQL inline completion is configured but no language model providers are available.",
         setAnthropic,
         setOpenAi,
+        setXAi,
         dontShow,
     );
 
@@ -140,6 +158,8 @@ async function showNoExternalProviderAvailableMessage(
         await vscode.commands.executeCommand(Constants.cmdSetAnthropicSdkLanguageModelApiKey);
     } else if (selection === setOpenAi) {
         await vscode.commands.executeCommand(Constants.cmdSetOpenAiSdkLanguageModelApiKey);
+    } else if (selection === setXAi) {
+        await vscode.commands.executeCommand(Constants.cmdSetXAiSdkLanguageModelApiKey);
     } else if (selection === dontShow) {
         await context.globalState.update(dontShowKey, true);
     }
@@ -151,4 +171,5 @@ function isSettingEnabled(setting: string, defaultValue: boolean): boolean {
 
 export { AnthropicSdkLanguageModelProvider } from "./anthropicSdkLanguageModelProvider";
 export { OpenAiSdkLanguageModelProvider } from "./openaiSdkLanguageModelProvider";
+export { XAiSdkLanguageModelProvider } from "./xaiSdkLanguageModelProvider";
 export { getSecretStorageKey, SdkApiKeyResolver } from "./apiKeyResolution";

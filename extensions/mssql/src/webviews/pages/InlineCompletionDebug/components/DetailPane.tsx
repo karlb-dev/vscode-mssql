@@ -10,11 +10,13 @@ import {
     TabList,
     Text,
     makeStyles,
+    mergeClasses,
     shorthands,
     tokens,
 } from "@fluentui/react-components";
 import { CopyRegular } from "@fluentui/react-icons";
 import { InlineCompletionDebugEvent } from "../../../../sharedInterfaces/inlineCompletionDebug";
+import { getLatencyBucket } from "../../../../sharedInterfaces/latencyBuckets";
 import { useInlineCompletionDebugContext } from "../inlineCompletionDebugStateProvider";
 
 const useStyles = makeStyles({
@@ -81,9 +83,13 @@ const useStyles = makeStyles({
     },
     keyValueGrid: {
         display: "grid",
-        gridTemplateColumns: "220px minmax(0, 1fr)",
+        gridTemplateColumns: "max-content minmax(0, 1fr)",
         rowGap: "8px",
         columnGap: "16px",
+        alignItems: "baseline",
+    },
+    telemetryLabel: {
+        whiteSpace: "nowrap",
     },
     copyButton: {
         flexShrink: 0,
@@ -261,7 +267,13 @@ export const InlineCompletionDebugDetailPane = ({
                     <div className={classes.keyValueGrid}>
                         {telemetryRows.map(([label, value]) => (
                             <React.Fragment key={label}>
-                                <Text className={classes.summaryLabel}>{label}</Text>
+                                <Text
+                                    className={mergeClasses(
+                                        classes.summaryLabel,
+                                        classes.telemetryLabel,
+                                    )}>
+                                    {label}
+                                </Text>
                                 <Text>{value}</Text>
                             </React.Fragment>
                         ))}
@@ -320,7 +332,7 @@ function buildTelemetryRows(event: InlineCompletionDebugEvent): Array<[string, s
         ["schemaForeignKeyCountBucket", bucketCount(event.schemaForeignKeyCount)],
         ["modelFamily", event.modelFamily ?? "unknown"],
         ["triggerKind", event.triggerKind],
-        ["latencyBucket", bucketLatency(event.latencyMs)],
+        ["latencyBucket", getLatencyBucket(event.latencyMs)],
         ["inferredSystemQuery", String(event.inferredSystemQuery)],
         [
             "completionCategory",
@@ -359,20 +371,4 @@ function formatEventModel(event: InlineCompletionDebugEvent): string {
         return `${event.modelVendor}/${event.modelId}${familySuffix}`;
     }
     return event.modelFamily ?? "default";
-}
-
-function bucketLatency(latencyMs: number): string {
-    if (latencyMs < 100) {
-        return "<100";
-    }
-    if (latencyMs < 300) {
-        return "100-300";
-    }
-    if (latencyMs < 800) {
-        return "300-800";
-    }
-    if (latencyMs < 2000) {
-        return "800-2000";
-    }
-    return "2000+";
 }

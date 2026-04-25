@@ -6,6 +6,7 @@
 import * as vscode from "vscode";
 import * as Constants from "../../constants/constants";
 import { logger2 } from "../../models/logger2";
+import { getLatencyBucket } from "../../sharedInterfaces/latencyBuckets";
 import { TelemetryActions, TelemetryViews } from "../../sharedInterfaces/telemetry";
 import { sendActionEvent } from "../../telemetry/telemetry";
 import { getErrorMessage } from "../../utils/utils";
@@ -13,7 +14,12 @@ import {
     LanguageModelChatInformation,
     toLanguageModelChatInformation,
 } from "../languageModels/shared/providerModelCatalog";
-import { SdkApiKeyResolver, SdkProviderKind, sdkApiKeyProviders } from "./apiKeyResolution";
+import {
+    SdkApiKeyResolver,
+    SdkProviderKind,
+    SdkProviderVendor,
+    sdkApiKeyProviders,
+} from "./apiKeyResolution";
 import { getSdkModelCatalog } from "./sdkModelCatalog";
 
 export interface LanguageModelChatResponseProgress {
@@ -202,7 +208,7 @@ export abstract class SdkLanguageModelProviderBase {
 
     protected abstract invalidateClient(): void;
 
-    protected get vendor(): "anthropic-api" | "openai-api" {
+    protected get vendor(): SdkProviderVendor {
         return sdkApiKeyProviders[this.kind].vendor;
     }
 
@@ -215,18 +221,12 @@ export abstract class SdkLanguageModelProviderBase {
     }
 
     protected getBaseUrl(): string | undefined {
-        const setting =
-            this.kind === "anthropic"
-                ? Constants.configCopilotSdkProvidersAnthropicBaseUrl
-                : Constants.configCopilotSdkProvidersOpenAiBaseUrl;
+        const setting = getBaseUrlSetting(this.kind);
         return vscode.workspace.getConfiguration().get<string>(setting, "")?.trim() || undefined;
     }
 
     protected getTimeout(): number {
-        const setting =
-            this.kind === "anthropic"
-                ? Constants.configCopilotSdkProvidersAnthropicTimeout
-                : Constants.configCopilotSdkProvidersOpenAiTimeout;
+        const setting = getTimeoutSetting(this.kind);
         const configured = vscode.workspace
             .getConfiguration()
             .get<number>(setting, defaultTimeoutMs);
@@ -236,17 +236,12 @@ export abstract class SdkLanguageModelProviderBase {
     }
 
     private isEnabled(): boolean {
-        const setting =
-            this.kind === "anthropic"
-                ? Constants.configCopilotSdkProvidersAnthropicEnabled
-                : Constants.configCopilotSdkProvidersOpenAiEnabled;
+        const setting = getEnabledSetting(this.kind);
         return vscode.workspace.getConfiguration().get<boolean>(setting, true) ?? true;
     }
 
     private resolveApiKey(): Promise<string | undefined> {
-        return this.kind === "anthropic"
-            ? this.apiKeys.resolveAnthropic()
-            : this.apiKeys.resolveOpenAI();
+        return this.apiKeys.resolveProvider(this.kind);
     }
 
     private getClientOptions(apiKey: string): SdkClientOptions {
@@ -339,18 +334,35 @@ function getPositiveIntegerOption(value: unknown): number | undefined {
     return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : undefined;
 }
 
-function getLatencyBucket(latencyMs: number): string {
-    if (latencyMs < 100) {
-        return "<100";
+function getEnabledSetting(kind: SdkProviderKind): string {
+    switch (kind) {
+        case "anthropic":
+            return Constants.configCopilotSdkProvidersAnthropicEnabled;
+        case "openai":
+            return Constants.configCopilotSdkProvidersOpenAiEnabled;
+        case "xai":
+            return Constants.configCopilotSdkProvidersXAiEnabled;
     }
-    if (latencyMs < 300) {
-        return "100-300";
+}
+
+function getBaseUrlSetting(kind: SdkProviderKind): string {
+    switch (kind) {
+        case "anthropic":
+            return Constants.configCopilotSdkProvidersAnthropicBaseUrl;
+        case "openai":
+            return Constants.configCopilotSdkProvidersOpenAiBaseUrl;
+        case "xai":
+            return Constants.configCopilotSdkProvidersXAiBaseUrl;
     }
-    if (latencyMs < 800) {
-        return "300-800";
+}
+
+function getTimeoutSetting(kind: SdkProviderKind): string {
+    switch (kind) {
+        case "anthropic":
+            return Constants.configCopilotSdkProvidersAnthropicTimeout;
+        case "openai":
+            return Constants.configCopilotSdkProvidersOpenAiTimeout;
+        case "xai":
+            return Constants.configCopilotSdkProvidersXAiTimeout;
     }
-    if (latencyMs < 2000) {
-        return "800-2000";
-    }
-    return "2000+";
 }

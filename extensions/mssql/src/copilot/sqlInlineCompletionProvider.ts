@@ -36,6 +36,7 @@ import {
     InlineCompletionResult,
     inlineCompletionCategories,
 } from "../sharedInterfaces/inlineCompletionDebug";
+import { getLatencyBucket } from "../sharedInterfaces/latencyBuckets";
 
 // MSSQL owns SQL ghost text for this feature. VS Code does not expose a hook to augment
 // GitHub Copilot's built-in inline-completion request, so this provider uses Copilot chat
@@ -1748,26 +1749,6 @@ function getTriggerKindName(
     triggerKind: vscode.InlineCompletionTriggerKind,
 ): "automatic" | "invoke" {
     return triggerKind === vscode.InlineCompletionTriggerKind.Automatic ? "automatic" : "invoke";
-}
-
-function getLatencyBucket(latencyMs: number): string {
-    if (latencyMs < 100) {
-        return "<100";
-    }
-
-    if (latencyMs < 300) {
-        return "100-300";
-    }
-
-    if (latencyMs < 800) {
-        return "300-800";
-    }
-
-    if (latencyMs < 2000) {
-        return "800-2000";
-    }
-
-    return "2000+";
 }
 
 function getCountBucket(count: number): string {

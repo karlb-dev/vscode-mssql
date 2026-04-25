@@ -52,6 +52,13 @@ export const defaultAnthropicSdkModels: SdkModelCatalogEntry[] = [
 
 export const defaultOpenAiSdkModels: SdkModelCatalogEntry[] = [
     {
+        id: "gpt-5.5",
+        displayName: "GPT-5.5",
+        family: "gpt-5.5",
+        maxInputTokens: 1050000,
+        maxOutputTokens: 128000,
+    },
+    {
         id: "gpt-5.4",
         displayName: "GPT-5.4",
         family: "gpt-5.4",
@@ -65,36 +72,55 @@ export const defaultOpenAiSdkModels: SdkModelCatalogEntry[] = [
         maxInputTokens: 400000,
         maxOutputTokens: 128000,
     },
+];
+
+export const defaultXAiSdkModels: SdkModelCatalogEntry[] = [
     {
-        id: "gpt-5",
-        displayName: "GPT-5",
-        family: "gpt-5",
-        maxInputTokens: 400000,
-        maxOutputTokens: 128000,
+        id: "grok-4-1-fast-non-reasoning",
+        displayName: "Grok 4.1 Fast Non-Reasoning",
+        family: "grok-4.1-fast",
+        maxInputTokens: 2000000,
+        maxOutputTokens: 30000,
     },
     {
-        id: "gpt-5-mini",
-        displayName: "GPT-5 Mini",
-        family: "gpt-5-mini",
-        maxInputTokens: 400000,
-        maxOutputTokens: 128000,
+        id: "grok-4.20",
+        displayName: "Grok 4.20",
+        family: "grok-4.20",
+        maxInputTokens: 2000000,
+        maxOutputTokens: 65536,
     },
     {
-        id: "o3",
-        displayName: "o3",
-        family: "o3",
-        maxInputTokens: 200000,
-        maxOutputTokens: 100000,
+        id: "grok-4.20-reasoning",
+        displayName: "Grok 4.20 Reasoning",
+        family: "grok-4.20",
+        maxInputTokens: 2000000,
+        maxOutputTokens: 65536,
     },
 ];
 
 export function getSdkModelCatalog(kind: SdkProviderKind): SdkModelCatalogEntry[] {
-    const defaults = kind === "anthropic" ? defaultAnthropicSdkModels : defaultOpenAiSdkModels;
+    const defaults = getDefaultSdkModels(kind);
     return [...defaults, ...getConfiguredAdditionalModels(getAdditionalModelsSetting(kind))];
 }
 
 function getAdditionalModelsSetting(kind: SdkProviderKind): string {
-    return kind === "anthropic"
-        ? Constants.configCopilotSdkProvidersAnthropicAdditionalModels
-        : Constants.configCopilotSdkProvidersOpenAiAdditionalModels;
+    switch (kind) {
+        case "anthropic":
+            return Constants.configCopilotSdkProvidersAnthropicAdditionalModels;
+        case "openai":
+            return Constants.configCopilotSdkProvidersOpenAiAdditionalModels;
+        case "xai":
+            return Constants.configCopilotSdkProvidersXAiAdditionalModels;
+    }
+}
+
+function getDefaultSdkModels(kind: SdkProviderKind): SdkModelCatalogEntry[] {
+    switch (kind) {
+        case "anthropic":
+            return defaultAnthropicSdkModels;
+        case "openai":
+            return defaultOpenAiSdkModels;
+        case "xai":
+            return defaultXAiSdkModels;
+    }
 }
