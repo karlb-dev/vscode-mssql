@@ -7367,6 +7367,9 @@
     <trans-unit id="mssql.dacpacDialog.launch">
       <source xml:lang="en">DACPAC/BACPAC Operations...</source>
     </trans-unit>
+    <trans-unit id="mssql.copilot.inlineCompletions.profile.description">
+      <source xml:lang="en">Default request profile for SQL inline completions. Preset profiles control model preference, enabled categories, and automatic debounce.</source>
+    </trans-unit>
     <trans-unit id="mssql.defaultQueryResultsViewMode.description">
       <source xml:lang="en">Default view mode for query results display.</source>
     </trans-unit>
@@ -7560,7 +7563,7 @@
       <source xml:lang="en">Inline SQL completion categories to enable. Use &apos;continuation&apos; for cursor-continuation ghost text and &apos;intent&apos; for comment-to-query completions.</source>
     </trans-unit>
     <trans-unit id="mssql.copilot.inlineCompletions.modelFamily.description">
-      <source xml:lang="en">Language model used for SQL inline completions. Accepts either a vendor/id selector (e.g. &apos;anthropic-api/claude-opus-4-7&apos;, &apos;copilot/gpt-4o&apos;) or a bare family name (e.g. &apos;gpt-4o&apos;, &apos;claude-sonnet-4-5&apos;). Falls back to the strongest available model if the specified value is not found.</source>
+      <source xml:lang="en">Language model used for SQL inline completions when the completion profile is &apos;default&apos;. Accepts either a vendor/id selector (e.g. &apos;anthropic-api/claude-opus-4-7&apos;, &apos;copilot/gpt-4o&apos;) or a bare family name (e.g. &apos;gpt-4o&apos;, &apos;claude-sonnet-4-5&apos;). Falls back to the strongest available model if the specified value is not found.</source>
     </trans-unit>
     <trans-unit id="mssql.profiler.launchFromObjectExplorer">
       <source xml:lang="en">Launch Query Profiler...</source>
