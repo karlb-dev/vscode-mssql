@@ -66,11 +66,15 @@ export function normalizeConfiguredAdditionalModels(
 }
 
 export function toLanguageModelChatInformation(
-    vendor: string,
+    _vendor: string,
     entry: ProviderModelEntry,
 ): LanguageModelChatInformation {
+    // Vendor-uniqueness is provided by VS Code's LanguageModelChat.vendor field;
+    // prefixing the id again would only produce ugly composite ids like
+    // `anthropic-api/anthropic-api/claude-sonnet-4-6` once a downstream consumer
+    // composes its own `vendor/id` selector.
     return {
-        id: `${vendor}/${entry.id}`,
+        id: entry.id,
         name: entry.displayName,
         family: entry.family,
         version: entry.version ?? entry.id,

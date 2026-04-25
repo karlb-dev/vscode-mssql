@@ -92,7 +92,8 @@ suite("SqlInlineCompletionProvider Tests", () => {
         inlineCompletionDebugStore.clearEvents();
         inlineCompletionDebugStore.setPanelOpen(false);
         inlineCompletionDebugStore.replaceOverrides({
-            modelFamily: null,
+            profileId: null,
+            modelSelector: null,
             useSchemaContext: null,
             debounceMs: null,
             maxTokens: null,
@@ -574,6 +575,22 @@ ORDER BY qs.total_worker_time DESC;`,
 
     test("uses the runtime category override before requesting a model", async () => {
         inlineCompletionDebugStore.updateOverrides({ enabledCategories: ["intent"] });
+
+        const items = await provider.provideInlineCompletionItems(
+            createTestDocument("SELECT *", "file:///query.sql"),
+            new vscode.Position(0, "SELECT *".length),
+            {
+                triggerKind: vscode.InlineCompletionTriggerKind.Invoke,
+            } as vscode.InlineCompletionContext,
+            { isCancellationRequested: false } as vscode.CancellationToken,
+        );
+
+        expect(items).to.deep.equal([]);
+        expect(sendRequestStub).to.not.have.been.called;
+    });
+
+    test("uses the active debug profile categories before requesting a model", async () => {
+        inlineCompletionDebugStore.updateOverrides({ profileId: "focused" });
 
         const items = await provider.provideInlineCompletionItems(
             createTestDocument("SELECT *", "file:///query.sql"),

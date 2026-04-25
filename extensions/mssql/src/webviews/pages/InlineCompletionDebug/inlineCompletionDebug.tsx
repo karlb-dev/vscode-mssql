@@ -284,7 +284,10 @@ function getFieldValueGetter(field: string):
         case "model":
             return {
                 type: "string",
-                get: (event) => `${event.modelFamily ?? ""} ${event.modelId ?? ""}`.trim(),
+                get: (event) =>
+                    `${event.modelVendor ?? ""} ${event.modelFamily ?? ""} ${
+                        event.modelId ?? ""
+                    }`.trim(),
             };
         case "mode":
             return {

@@ -77,7 +77,7 @@ export class OpenAiSdkLanguageModelProvider extends SdkLanguageModelProviderBase
         const stream = await this.getClient(clientOptions).chat.completions.create({
             model: this.getModelId(model),
             messages: translateForOpenAI(messages),
-            max_tokens: maxTokens,
+            max_completion_tokens: maxTokens,
             stream: true,
             stream_options: { include_usage: true },
         });

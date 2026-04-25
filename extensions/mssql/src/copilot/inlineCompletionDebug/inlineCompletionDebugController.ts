@@ -27,13 +27,29 @@ import {
     selectPreferredModel,
     suppressDocumentSuffixOverlap,
 } from "../sqlInlineCompletionProvider";
-import { selectConfiguredLanguageModels } from "../languageModelSelection";
+import {
+    matchLanguageModelChatToSelector,
+    selectConfiguredLanguageModels,
+} from "../languageModelSelection";
+import {
+    formatModelDisplayName,
+    formatModelSelector,
+    formatProviderLabel,
+} from "../languageModels/shared/modelDisplay";
+import {
+    createInlineCompletionDebugPresetOverrides,
+    getInlineCompletionDebugPresetProfile,
+    inlineCompletionDebugCustomProfileId,
+    inlineCompletionDebugProfileOptions,
+    InlineCompletionModelPreference,
+} from "./inlineCompletionDebugProfiles";
 import { inlineCompletionDebugStore } from "./inlineCompletionDebugStore";
 import {
     InlineCompletionDebugEvent,
     InlineCompletionDebugExportData,
     InlineCompletionDebugModelOption,
     InlineCompletionDebugOverrides,
+    InlineCompletionDebugProfileId,
     InlineCompletionDebugWebviewState,
     InlineCompletionDebugReducers,
 } from "../../sharedInterfaces/inlineCompletionDebug";
@@ -50,7 +66,7 @@ export class InlineCompletionDebugController extends WebviewPanelController<
 > {
     private readonly _logger = logger2.withPrefix("InlineCompletionDebug");
     private _availableModels: InlineCompletionDebugModelOption[] = [];
-    private _effectiveDefaultModelFamily: string | undefined;
+    private _effectiveDefaultModelOption: InlineCompletionDebugModelOption | undefined;
     private _savedCustomPromptValue: string | null;
     private _customPromptLastSavedAt: number | undefined;
 
@@ -76,7 +92,7 @@ export class InlineCompletionDebugController extends WebviewPanelController<
             "inlineCompletionDebug",
             createState({
                 availableModels: [],
-                effectiveDefaultModelFamily: undefined,
+                effectiveDefaultModelOption: undefined,
                 selectedEventId: undefined,
                 customPromptDialogOpen: false,
                 customPromptValue: savedCustomPrompt,
@@ -129,9 +145,9 @@ export class InlineCompletionDebugController extends WebviewPanelController<
                     e.affectsConfiguration(Constants.configCopilotInlineCompletionsModelFamily) ||
                     e.affectsConfiguration(Constants.configCopilotInlineCompletionsModelVendors)
                 ) {
-                    this._effectiveDefaultModelFamily = getEffectiveDefaultModelFamily(
+                    this._effectiveDefaultModelOption = pickDefaultModelOption(
                         this._availableModels,
-                        getConfiguredModelFamily(),
+                        getConfiguredModelSelector(),
                     );
                     this.updateState(this.createState());
                     void this.refreshAvailableModels();
@@ -157,7 +173,17 @@ export class InlineCompletionDebugController extends WebviewPanelController<
         });
 
         this.registerReducer("updateOverrides", (state, payload) => {
-            inlineCompletionDebugStore.updateOverrides(payload.overrides);
+            inlineCompletionDebugStore.updateOverrides(
+                this.prepareUserOverrideUpdate(payload.overrides),
+            );
+            return this.createState({
+                selectedEventId: state.selectedEventId,
+                customPromptDialogOpen: state.customPrompt.dialogOpen,
+            });
+        });
+
+        this.registerReducer("selectProfile", (state, payload) => {
+            inlineCompletionDebugStore.updateOverrides(this.createProfileUpdate(payload.profileId));
             return this.createState({
                 selectedEventId: state.selectedEventId,
                 customPromptDialogOpen: state.customPrompt.dialogOpen,
@@ -195,7 +221,7 @@ export class InlineCompletionDebugController extends WebviewPanelController<
         this.registerReducer("saveCustomPrompt", async (state, payload) => {
             const value = payload.value.length > 0 ? payload.value : null;
             const savedAt = value ? Date.now() : undefined;
-            await this.persistCustomPrompt(value, savedAt);
+            await this.persistCustomPrompt(value, savedAt, true);
             return this.createState({
                 selectedEventId: state.selectedEventId,
                 customPromptDialogOpen: false,
@@ -203,7 +229,7 @@ export class InlineCompletionDebugController extends WebviewPanelController<
         });
 
         this.registerReducer("resetCustomPrompt", async (state) => {
-            await this.persistCustomPrompt(null, undefined);
+            await this.persistCustomPrompt(null, undefined, false);
             return this.createState({
                 selectedEventId: state.selectedEventId,
                 customPromptDialogOpen: state.customPrompt.dialogOpen,
@@ -256,7 +282,7 @@ export class InlineCompletionDebugController extends WebviewPanelController<
             overrides?.customPromptLastSavedAt ?? this._customPromptLastSavedAt;
         return createState({
             availableModels: this._availableModels,
-            effectiveDefaultModelFamily: this._effectiveDefaultModelFamily,
+            effectiveDefaultModelOption: this._effectiveDefaultModelOption,
             selectedEventId: overrides?.selectedEventId ?? this.state?.selectedEventId,
             customPromptDialogOpen:
                 overrides?.customPromptDialogOpen ?? this.state?.customPrompt.dialogOpen ?? false,
@@ -268,18 +294,16 @@ export class InlineCompletionDebugController extends WebviewPanelController<
     private async refreshAvailableModels(): Promise<void> {
         try {
             const models = await selectConfiguredLanguageModels();
-            this._effectiveDefaultModelFamily = getEffectiveDefaultModelFamily(
-                models,
-                getConfiguredModelFamily(),
-            );
-            const nameCounts = getModelNameCounts(models);
             const byModel = new Map<string, InlineCompletionDebugModelOption>();
             for (const model of models) {
-                const key = `${model.vendor}/${model.id}`;
-                if (!byModel.has(key)) {
-                    byModel.set(key, {
+                const selector = formatModelSelector(model);
+                if (!byModel.has(selector)) {
+                    byModel.set(selector, {
+                        selector,
+                        label: formatModelDisplayName(model),
+                        providerLabel: formatProviderLabel(model.vendor),
                         id: model.id,
-                        name: formatModelDisplayName(model, nameCounts),
+                        name: model.name,
                         family: model.family,
                         vendor: model.vendor,
                         version: model.version,
@@ -287,13 +311,10 @@ export class InlineCompletionDebugController extends WebviewPanelController<
                 }
             }
 
-            this._availableModels = Array.from(byModel.values()).sort(
-                (left, right) =>
-                    left.family.localeCompare(right.family, undefined, {
-                        sensitivity: "base",
-                        numeric: true,
-                    }) ||
-                    left.vendor.localeCompare(right.vendor, undefined, { sensitivity: "base" }),
+            this._availableModels = Array.from(byModel.values()).sort(compareModelOptions);
+            this._effectiveDefaultModelOption = pickDefaultModelOption(
+                this._availableModels,
+                getConfiguredModelSelector(),
             );
             if (!this.isDisposed) {
                 this.updateState(this.createState());
@@ -305,9 +326,79 @@ export class InlineCompletionDebugController extends WebviewPanelController<
         }
     }
 
+    private prepareUserOverrideUpdate(
+        update: Partial<InlineCompletionDebugOverrides>,
+    ): Partial<InlineCompletionDebugOverrides> {
+        const current = inlineCompletionDebugStore.getOverrides();
+        if (!this.shouldSwitchProfileToCustom(current, update)) {
+            return update;
+        }
+
+        return {
+            ...this.materializeProfileOverrides(current),
+            ...update,
+            profileId: inlineCompletionDebugCustomProfileId,
+        };
+    }
+
+    private createProfileUpdate(
+        profileId: InlineCompletionDebugProfileId,
+    ): Partial<InlineCompletionDebugOverrides> {
+        if (profileId === inlineCompletionDebugCustomProfileId) {
+            return this.materializeProfileOverrides(inlineCompletionDebugStore.getOverrides());
+        }
+
+        return createInlineCompletionDebugPresetOverrides(profileId);
+    }
+
+    private shouldSwitchProfileToCustom(
+        current: InlineCompletionDebugOverrides,
+        update: Partial<InlineCompletionDebugOverrides>,
+    ): boolean {
+        if (!getInlineCompletionDebugPresetProfile(current.profileId)) {
+            return false;
+        }
+
+        return (
+            Object.prototype.hasOwnProperty.call(update, "modelSelector") ||
+            Object.prototype.hasOwnProperty.call(update, "forceIntentMode") ||
+            Object.prototype.hasOwnProperty.call(update, "enabledCategories") ||
+            Object.prototype.hasOwnProperty.call(update, "debounceMs") ||
+            Object.prototype.hasOwnProperty.call(update, "maxTokens") ||
+            Object.prototype.hasOwnProperty.call(update, "customSystemPrompt")
+        );
+    }
+
+    private materializeProfileOverrides(
+        current: InlineCompletionDebugOverrides,
+    ): Partial<InlineCompletionDebugOverrides> {
+        const profile = getInlineCompletionDebugPresetProfile(current.profileId);
+        if (!profile) {
+            return {
+                profileId: inlineCompletionDebugCustomProfileId,
+            };
+        }
+
+        const modelOption = pickDefaultModelOption(
+            this._availableModels,
+            getConfiguredModelSelector(),
+            profile.modelPreference,
+        );
+
+        return {
+            profileId: inlineCompletionDebugCustomProfileId,
+            modelSelector: current.modelSelector ?? modelOption?.selector ?? null,
+            forceIntentMode: current.forceIntentMode ?? profile.forceIntentMode,
+            enabledCategories: current.enabledCategories ?? [...profile.enabledCategories],
+            debounceMs: current.debounceMs ?? profile.debounceMs,
+            maxTokens: current.maxTokens ?? profile.maxTokens,
+        };
+    }
+
     private async persistCustomPrompt(
         value: string | null,
         savedAt: number | undefined,
+        markProfileCustom: boolean,
     ): Promise<void> {
         this._savedCustomPromptValue = value;
         this._customPromptLastSavedAt = savedAt;
@@ -319,7 +410,11 @@ export class InlineCompletionDebugController extends WebviewPanelController<
             INLINE_COMPLETION_DEBUG_CUSTOM_PROMPT_SAVED_AT_MEMENTO_KEY,
             savedAt,
         );
-        inlineCompletionDebugStore.updateOverrides({ customSystemPrompt: value });
+        inlineCompletionDebugStore.updateOverrides(
+            markProfileCustom
+                ? this.prepareUserOverrideUpdate({ customSystemPrompt: value })
+                : { customSystemPrompt: value },
+        );
     }
 
     private async exportSession(): Promise<void> {
@@ -378,6 +473,7 @@ export class InlineCompletionDebugController extends WebviewPanelController<
         await this.persistCustomPrompt(
             parsed.overrides?.customSystemPrompt ?? null,
             parsed.customPromptLastSavedAt,
+            false,
         );
     }
 
@@ -434,7 +530,11 @@ export class InlineCompletionDebugController extends WebviewPanelController<
         }
 
         const overrides = inlineCompletionDebugStore.getOverrides();
-        const selectedModel = await this.selectReplayModel(overrides.modelFamily);
+        const profile = getInlineCompletionDebugPresetProfile(overrides.profileId);
+        const selectedModel = await this.selectReplayModel(
+            overrides.modelSelector,
+            profile?.modelPreference,
+        );
         if (!selectedModel) {
             inlineCompletionDebugStore.addEvent({
                 ...cloneBaseEvent(sourceEvent),
@@ -496,7 +596,8 @@ export class InlineCompletionDebugController extends WebviewPanelController<
         const recentPrefix = asString(sourceEvent.locals.recentPrefix);
         const statementPrefix = asString(sourceEvent.locals.statementPrefix);
         const suffix = asString(sourceEvent.locals.suffix);
-        const intentMode = overrides.forceIntentMode ?? sourceEvent.intentMode;
+        const intentMode =
+            overrides.forceIntentMode ?? profile?.forceIntentMode ?? sourceEvent.intentMode;
         const completionCategory = getInlineCompletionCategory(intentMode);
         const useSchemaContext = overrides.useSchemaContext ?? getConfiguredUseSchemaContext();
         const schemaContextText =
@@ -523,7 +624,9 @@ export class InlineCompletionDebugController extends WebviewPanelController<
             schemaContextText,
         });
         const maxTokens =
-            overrides.maxTokens ?? (intentMode ? intentModeMaxTokens : continuationModeMaxTokens);
+            overrides.maxTokens ??
+            profile?.maxTokens ??
+            (intentMode ? intentModeMaxTokens : continuationModeMaxTokens);
         const startedAt = Date.now();
         const cancellationTokenSource = new vscode.CancellationTokenSource();
 
@@ -540,7 +643,10 @@ export class InlineCompletionDebugController extends WebviewPanelController<
             const rawResponse = await collectText(response, cancellationTokenSource.token);
             const sanitizedResponse = sanitizeInlineCompletionText(
                 rawResponse,
-                getEffectiveMaxCompletionChars(intentMode ? 2000 : 400, overrides.maxTokens),
+                getEffectiveMaxCompletionChars(
+                    intentMode ? 2000 : 400,
+                    overrides.maxTokens ?? profile?.maxTokens,
+                ),
                 linePrefix,
                 intentMode,
             );
@@ -603,6 +709,7 @@ export class InlineCompletionDebugController extends WebviewPanelController<
                         : undefined,
                 locals: {
                     ...sourceEvent.locals,
+                    profileId: overrides.profileId,
                     completionCategory,
                     intentMode,
                     useSchemaContext,
@@ -656,6 +763,7 @@ export class InlineCompletionDebugController extends WebviewPanelController<
                         : undefined,
                 locals: {
                     ...sourceEvent.locals,
+                    profileId: overrides.profileId,
                     completionCategory,
                     intentMode,
                     useSchemaContext,
@@ -675,46 +783,58 @@ export class InlineCompletionDebugController extends WebviewPanelController<
     }
 
     private async selectReplayModel(
-        modelFamilyOverride: string | null,
+        modelSelectorOverride: string | null,
+        modelPreference: InlineCompletionModelPreference | undefined,
     ): Promise<vscode.LanguageModelChat | undefined> {
-        const configuredFamily = getConfiguredModelFamily();
-        const effectiveFamily = modelFamilyOverride ?? configuredFamily;
-
-        if (effectiveFamily) {
-            const exact = await selectConfiguredLanguageModels(effectiveFamily);
-            if (exact.length > 0) {
-                return exact[0];
+        const effectiveSelector =
+            modelSelectorOverride ?? (modelPreference ? undefined : getConfiguredModelSelector());
+        const all = await selectConfiguredLanguageModels();
+        if (effectiveSelector) {
+            const matched = matchLanguageModelChatToSelector(all, effectiveSelector);
+            if (matched) {
+                return matched;
             }
         }
 
-        return selectPreferredModel(await selectConfiguredLanguageModels());
+        return selectPreferredModel(all, modelPreference);
     }
 }
 
 function createState(options: {
     availableModels: InlineCompletionDebugModelOption[];
-    effectiveDefaultModelFamily: string | undefined;
+    effectiveDefaultModelOption: InlineCompletionDebugModelOption | undefined;
     selectedEventId: string | undefined;
     customPromptDialogOpen: boolean;
     customPromptValue: string | null;
     customPromptLastSavedAt: number | undefined;
 }): InlineCompletionDebugWebviewState {
-    const configuredModelFamily = getConfiguredModelFamily();
+    const overrides = inlineCompletionDebugStore.getOverrides();
+    const profile = getInlineCompletionDebugPresetProfile(overrides.profileId);
+    const configuredModelSelector = getConfiguredModelSelector();
+    const effectiveOption =
+        (profile ? undefined : options.effectiveDefaultModelOption) ??
+        pickDefaultModelOption(
+            options.availableModels,
+            configuredModelSelector,
+            profile?.modelPreference,
+        );
     return {
         events: inlineCompletionDebugStore.getEvents(),
-        overrides: inlineCompletionDebugStore.getOverrides(),
+        overrides,
         defaults: {
-            configuredModelFamily,
-            effectiveModelFamily:
-                options.effectiveDefaultModelFamily ??
-                getEffectiveDefaultModelFamily(options.availableModels, configuredModelFamily),
+            configuredModelSelector,
+            effectiveModelSelector: effectiveOption?.selector,
+            effectiveModelLabel: effectiveOption?.label,
             useSchemaContext: getConfiguredUseSchemaContext(),
-            debounceMs: automaticTriggerDebounceMs,
+            debounceMs: profile?.debounceMs ?? automaticTriggerDebounceMs,
             continuationMaxTokens: continuationModeMaxTokens,
             intentMaxTokens: intentModeMaxTokens,
-            enabledCategories: getConfiguredEnabledCategories(),
+            enabledCategories: profile
+                ? [...profile.enabledCategories]
+                : getConfiguredEnabledCategories(),
             allowAutomaticTriggers: true,
         },
+        profiles: [...inlineCompletionDebugProfileOptions],
         availableModels: options.availableModels,
         selectedEventId: options.selectedEventId,
         recordWhenClosed: getRecordWhenClosedSetting(),
@@ -727,59 +847,45 @@ function createState(options: {
     };
 }
 
-function getEffectiveDefaultModelFamily<T extends { family: string }>(
-    availableModels: T[],
-    configuredModelFamily: string | undefined,
-): string | undefined {
-    if (
-        configuredModelFamily &&
-        availableModels.some((model) => model.family === configuredModelFamily)
-    ) {
-        return configuredModelFamily;
+function pickDefaultModelOption(
+    availableModels: InlineCompletionDebugModelOption[],
+    configuredSelector: string | undefined,
+    modelPreference?: InlineCompletionModelPreference,
+): InlineCompletionDebugModelOption | undefined {
+    if (!modelPreference && configuredSelector) {
+        const trimmed = configuredSelector.trim();
+        const matched =
+            availableModels.find((model) => model.selector === trimmed) ??
+            availableModels.find((model) => model.family === trimmed);
+        if (matched) {
+            return matched;
+        }
     }
 
-    return selectPreferredModel(availableModels)?.family ?? configuredModelFamily;
+    return selectPreferredModel(availableModels, modelPreference);
 }
 
-function getConfiguredModelFamily(): string | undefined {
+function compareModelOptions(
+    left: InlineCompletionDebugModelOption,
+    right: InlineCompletionDebugModelOption,
+): number {
+    return (
+        left.providerLabel.localeCompare(right.providerLabel, undefined, { sensitivity: "base" }) ||
+        left.name.localeCompare(right.name, undefined, {
+            sensitivity: "base",
+            numeric: true,
+        }) ||
+        left.id.localeCompare(right.id, undefined, { sensitivity: "base" })
+    );
+}
+
+function getConfiguredModelSelector(): string | undefined {
     return (
         vscode.workspace
             .getConfiguration()
             .get<string>(Constants.configCopilotInlineCompletionsModelFamily, "")
             ?.trim() || undefined
     );
-}
-
-function getModelNameCounts(models: vscode.LanguageModelChat[]): Map<string, number> {
-    const counts = new Map<string, number>();
-    for (const model of models) {
-        counts.set(model.name, (counts.get(model.name) ?? 0) + 1);
-    }
-    return counts;
-}
-
-function formatModelDisplayName(
-    model: vscode.LanguageModelChat,
-    nameCounts: Map<string, number>,
-): string {
-    if ((nameCounts.get(model.name) ?? 0) <= 1) {
-        return model.name;
-    }
-
-    return `${model.name} (${formatVendorLabel(model.vendor)})`;
-}
-
-function formatVendorLabel(vendor: string): string {
-    switch (vendor) {
-        case "copilot":
-            return "Copilot";
-        case "anthropic-cli":
-            return "Anthropic CLI";
-        case "openai-cli":
-            return "OpenAI CLI";
-        default:
-            return vendor;
-    }
 }
 
 function getConfiguredUseSchemaContext(): boolean {
@@ -853,7 +959,8 @@ function cloneBaseEvent(event: InlineCompletionDebugEvent): Omit<InlineCompletio
 
 function getOverridesApplied(overrides: InlineCompletionDebugOverrides) {
     return {
-        ...(overrides.modelFamily ? { modelFamily: overrides.modelFamily } : {}),
+        ...(overrides.profileId ? { profileId: overrides.profileId } : {}),
+        ...(overrides.modelSelector ? { modelSelector: overrides.modelSelector } : {}),
         ...(overrides.useSchemaContext !== null
             ? { useSchemaContext: overrides.useSchemaContext }
             : {}),

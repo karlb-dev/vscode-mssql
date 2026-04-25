@@ -201,13 +201,7 @@ export const InlineCompletionDebugDetailPane = ({
                                 } | intentMode=${event.intentMode}`,
                                 classes,
                             )}
-                            {summaryRow(
-                                "Model",
-                                `${event.modelFamily ?? "default"}${
-                                    event.modelId ? ` (${event.modelId})` : ""
-                                }`,
-                                classes,
-                            )}
+                            {summaryRow("Model", formatEventModel(event), classes)}
                             {summaryRow("Result", event.result, classes)}
                             {summaryRow("Latency", `${event.latencyMs} ms`, classes)}
                             {summaryRow(
@@ -354,6 +348,17 @@ function bucketCount(count: number): string {
         return "11-20";
     }
     return "20+";
+}
+
+function formatEventModel(event: InlineCompletionDebugEvent): string {
+    if (event.modelVendor && event.modelId) {
+        const familySuffix =
+            event.modelFamily && event.modelFamily !== event.modelId
+                ? `, family=${event.modelFamily}`
+                : "";
+        return `${event.modelVendor}/${event.modelId}${familySuffix}`;
+    }
+    return event.modelFamily ?? "default";
 }
 
 function bucketLatency(latencyMs: number): string {

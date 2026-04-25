@@ -60,7 +60,7 @@ suite("AnthropicSdkLanguageModelProvider", () => {
         const models = await provider.prepareLanguageModelChat({}, cancellationToken());
 
         expect(models.map((model) => model.id)).to.deep.equal(
-            defaultAnthropicSdkModels.map((model) => `anthropic-api/${model.id}`),
+            defaultAnthropicSdkModels.map((model) => model.id),
         );
     });
 
@@ -92,7 +92,7 @@ suite("AnthropicSdkLanguageModelProvider", () => {
         );
 
         expect(models.at(-1)).to.include({
-            id: "anthropic-api/claude-private",
+            id: "claude-private",
             name: "Claude Private",
             maxInputTokens: 123,
             maxOutputTokens: 45,
@@ -328,7 +328,7 @@ function createContextWithKey(): vscode.ExtensionContext {
 
 function defaultModel() {
     return {
-        id: "anthropic-api/claude-sonnet-4-6",
+        id: "claude-sonnet-4-6",
         name: "Claude Sonnet 4.6",
         family: "claude-sonnet",
         version: "claude-sonnet-4-6",

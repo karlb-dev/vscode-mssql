@@ -10,10 +10,16 @@ import { logger2 } from "../models/logger2";
 import { TelemetryActions, TelemetryViews } from "../sharedInterfaces/telemetry";
 import { sendActionEvent, sendErrorEvent } from "../telemetry/telemetry";
 import { getErrorMessage } from "../utils/utils";
+import {
+    defaultInlineCompletionModelPreference,
+    getInlineCompletionDebugPresetProfile,
+    InlineCompletionModelPreference,
+} from "./inlineCompletionDebug/inlineCompletionDebugProfiles";
 import { inlineCompletionDebugStore } from "./inlineCompletionDebug/inlineCompletionDebugStore";
 import { isInlineCompletionFeatureEnabled } from "./inlineCompletionFeatureGate";
 import {
     getConfiguredInlineCompletionModelVendors,
+    matchLanguageModelChatToSelector,
     selectConfiguredLanguageModels,
 } from "./languageModelSelection";
 import {
@@ -33,19 +39,10 @@ import {
 // MSSQL owns SQL ghost text for this feature. VS Code does not expose a hook to augment
 // GitHub Copilot's built-in inline-completion request, so this provider uses Copilot chat
 // models directly and assumes github.copilot.enable["sql"] = false to avoid provider races.
-// If the user configured mssql.copilot.inlineCompletions.modelFamily we respect it; otherwise
-// we choose the strongest available Copilot model regardless of trigger, because SQL completion
-// quality has been more valuable in practice than shaving a bit of latency.
-const modelFamilyFallbackPreferences: RegExp[] = [
-    /^claude-sonnet/i,
-    /^claude-opus/i,
-    /^gpt-5.*codex/i,
-    /^gpt-5(?!.*(mini|codex))/i,
-    /^gpt-5.*mini/i,
-    /^gpt-4o(?!-mini)/i,
-    /^gpt-4o-mini/i,
-    /^claude.*haiku/i,
-];
+// If the user configured mssql.copilot.inlineCompletions.modelFamily — either as a selector
+// (`vendor/id`) or as a bare family — we respect it unless an in-memory debug profile is active.
+// Profiles carry their own provider/model preference lists so they can trade speed, quality,
+// and request volume without adding more workspace settings.
 
 const statementPrefixWindowChars = 2500;
 const recentPrefixWindowChars = 1500;
@@ -136,6 +133,7 @@ export class SqlInlineCompletionProvider
 
         const triggerKind = context.triggerKind;
         const overrides = inlineCompletionDebugStore.getOverrides();
+        const profile = getInlineCompletionDebugPresetProfile(overrides.profileId);
         const line = document.lineAt(position.line);
         const linePrefix = line.text.slice(0, position.character);
         const lineSuffix = line.text.slice(position.character);
@@ -152,19 +150,23 @@ export class SqlInlineCompletionProvider
         const suffix = getSuffixWindow(document, position, suffixWindowChars);
         const inferredSystemQuery = inferSystemQuery(statementPrefix, linePrefix);
         const detectedIntentMode = detectIntentMode(statementPrefix, linePrefix);
-        const intentMode = overrides.forceIntentMode ?? detectedIntentMode;
+        const intentMode =
+            overrides.forceIntentMode ?? profile?.forceIntentMode ?? detectedIntentMode;
         const completionCategory = getInlineCompletionCategory(intentMode);
         const enabledCategories =
-            overrides.enabledCategories ?? this.getConfiguredEnabledCategories();
+            overrides.enabledCategories ??
+            (profile ? [...profile.enabledCategories] : this.getConfiguredEnabledCategories());
         const effectiveMaxTokens =
-            overrides.maxTokens ?? (intentMode ? intentModeMaxTokens : continuationModeMaxTokens);
+            overrides.maxTokens ??
+            profile?.maxTokens ??
+            (intentMode ? intentModeMaxTokens : continuationModeMaxTokens);
         const effectiveMaxChars = getEffectiveMaxCompletionChars(
             intentMode ? intentModeMaxChars : maxCompletionChars,
-            overrides.maxTokens,
+            overrides.maxTokens ?? profile?.maxTokens,
         );
         const debounceMsApplied =
             triggerKind === vscode.InlineCompletionTriggerKind.Automatic
-                ? (overrides.debounceMs ?? automaticTriggerDebounceMs)
+                ? (overrides.debounceMs ?? profile?.debounceMs ?? automaticTriggerDebounceMs)
                 : 0;
         const useSchemaContext = overrides.useSchemaContext ?? this.getConfiguredUseSchemaContext();
         const shouldCaptureDebug = inlineCompletionDebugStore.shouldCapture(
@@ -241,7 +243,8 @@ export class SqlInlineCompletionProvider
                 schemaForeignKeyCount: getForeignKeyCount(schemaContext),
                 usedSchemaContext: !!schemaContext,
                 overridesApplied: {
-                    ...(overrides.modelFamily ? { modelFamily: overrides.modelFamily } : {}),
+                    ...(overrides.profileId ? { profileId: overrides.profileId } : {}),
+                    ...(overrides.modelSelector ? { modelSelector: overrides.modelSelector } : {}),
                     ...(overrides.useSchemaContext !== null
                         ? { useSchemaContext: overrides.useSchemaContext }
                         : {}),
@@ -262,6 +265,7 @@ export class SqlInlineCompletionProvider
                         ? "defined"
                         : "undefined",
                     "context.triggerKind": context.triggerKind,
+                    profileId: overrides.profileId,
                     "document.languageId": document.languageId,
                     "position.line": position.line,
                     "position.character": position.character,
@@ -298,7 +302,10 @@ export class SqlInlineCompletionProvider
         };
 
         try {
-            selectedModel = await this.getLanguageModel(overrides.modelFamily ?? undefined);
+            selectedModel = await this.getLanguageModel(
+                overrides.modelSelector ?? undefined,
+                profile?.modelPreference,
+            );
             if (!selectedModel) {
                 const telemetrySnapshot = createInlineTelemetrySnapshot(
                     undefined,
@@ -517,7 +524,7 @@ export class SqlInlineCompletionProvider
         return normalizeInlineCompletionCategories(configured);
     }
 
-    private getConfiguredModelFamily(): string | undefined {
+    private getConfiguredModelSelector(): string | undefined {
         return (
             vscode.workspace
                 .getConfiguration()
@@ -538,39 +545,41 @@ export class SqlInlineCompletionProvider
     }
 
     private async getLanguageModel(
-        modelFamilyOverride?: string,
+        modelSelectorOverride?: string,
+        modelPreference?: InlineCompletionModelPreference,
     ): Promise<vscode.LanguageModelChat | undefined> {
-        const configuredFamily = this.getConfiguredModelFamily();
-        const effectiveFamily = modelFamilyOverride ?? configuredFamily;
-        const selectorKey = `${getConfiguredInlineCompletionModelVendors().join(",")}|${
-            effectiveFamily || "__auto__"
-        }`;
+        const effectiveSelector =
+            modelSelectorOverride ??
+            (modelPreference ? undefined : this.getConfiguredModelSelector());
+        const cacheKey = `${getConfiguredInlineCompletionModelVendors().join(",")}|${
+            effectiveSelector || "__auto__"
+        }|${getModelPreferenceCacheKey(modelPreference)}`;
 
-        if (this._cachedModelInitialized && this._cachedModelSelectorKey === selectorKey) {
+        if (this._cachedModelInitialized && this._cachedModelSelectorKey === cacheKey) {
             return this._cachedModel;
         }
 
-        if (this._cachedModelSelectorKey !== selectorKey) {
+        if (this._cachedModelSelectorKey !== cacheKey) {
             this.clearModelCache();
         }
 
-        if (effectiveFamily) {
-            const exact = await selectConfiguredLanguageModels(effectiveFamily);
-            if (exact.length > 0) {
-                this._cachedModel = exact[0];
+        const all = await selectConfiguredLanguageModels();
+        if (effectiveSelector) {
+            const matched = matchLanguageModelChatToSelector(all, effectiveSelector);
+            if (matched) {
+                this._cachedModel = matched;
                 this._cachedModelInitialized = true;
-                this._cachedModelSelectorKey = selectorKey;
+                this._cachedModelSelectorKey = cacheKey;
                 return this._cachedModel;
             }
             this._logger.debug(
-                `Configured model family "${effectiveFamily}" not available; selecting best available language model.`,
+                `Configured model "${effectiveSelector}" not available; selecting best available language model.`,
             );
         }
 
-        const all = await selectConfiguredLanguageModels();
-        this._cachedModel = selectPreferredModel(all);
+        this._cachedModel = selectPreferredModel(all, modelPreference);
         this._cachedModelInitialized = true;
-        this._cachedModelSelectorKey = selectorKey;
+        this._cachedModelSelectorKey = cacheKey;
         return this._cachedModel;
     }
 
@@ -603,6 +612,18 @@ export class SqlInlineCompletionProvider
 
 export function getInlineCompletionCategory(intentMode: boolean): InlineCompletionCategory {
     return intentMode ? "intent" : "continuation";
+}
+
+function getModelPreferenceCacheKey(
+    preference: InlineCompletionModelPreference | undefined,
+): string {
+    if (!preference) {
+        return "__configured__";
+    }
+
+    return `${preference.providerVendors.join(",")}|${preference.familyPatterns
+        .map((pattern) => pattern.source)
+        .join(",")}`;
 }
 
 export function normalizeInlineCompletionCategories(value: unknown): InlineCompletionCategory[] {
@@ -778,14 +799,103 @@ ${options.schemaContextText}`,
     ];
 }
 
-export function selectPreferredModel<T extends { family: string }>(models: T[]): T | undefined {
-    for (const pattern of modelFamilyFallbackPreferences) {
-        const match = models.find((m) => pattern.test(m.family));
+export function selectPreferredModel<
+    T extends {
+        family: string;
+        vendor?: string;
+        id?: string;
+        name?: string;
+        version?: string;
+    },
+>(
+    models: T[],
+    preference:
+        | InlineCompletionModelPreference
+        | undefined = defaultInlineCompletionModelPreference,
+): T | undefined {
+    const familyPatterns =
+        preference.familyPatterns.length > 0
+            ? preference.familyPatterns
+            : defaultInlineCompletionModelPreference.familyPatterns;
+
+    for (const pattern of familyPatterns) {
+        const candidates = models.filter((model) => modelMatchesPreferencePattern(model, pattern));
+        const match = selectPreferredProviderModel(candidates, preference.providerVendors);
         if (match) {
             return match;
         }
     }
-    return models[0];
+    return selectPreferredProviderModel(models, preference.providerVendors);
+}
+
+function selectPreferredProviderModel<
+    T extends { vendor?: string; id?: string; version?: string; name?: string },
+>(models: T[], providerVendors: readonly string[]): T | undefined {
+    for (const vendor of providerVendors) {
+        const best = selectBestVersionedModel(models.filter((model) => model.vendor === vendor));
+        if (best) {
+            return best;
+        }
+    }
+
+    return selectBestVersionedModel(models);
+}
+
+function selectBestVersionedModel<T extends { id?: string; version?: string; name?: string }>(
+    models: T[],
+): T | undefined {
+    if (models.length <= 1) {
+        return models[0];
+    }
+
+    return [...models].sort(compareModelVersionDescending)[0];
+}
+
+function compareModelVersionDescending(
+    left: { id?: string; version?: string; name?: string },
+    right: { id?: string; version?: string; name?: string },
+): number {
+    const leftParts = getModelVersionParts(left);
+    const rightParts = getModelVersionParts(right);
+    const length = Math.max(leftParts.length, rightParts.length);
+    for (let index = 0; index < length; index++) {
+        const difference = (rightParts[index] ?? 0) - (leftParts[index] ?? 0);
+        if (difference !== 0) {
+            return difference;
+        }
+    }
+
+    return getModelVersionText(right).localeCompare(getModelVersionText(left), undefined, {
+        sensitivity: "base",
+        numeric: true,
+    });
+}
+
+function getModelVersionParts(model: { id?: string; version?: string; name?: string }): number[] {
+    return (getModelVersionText(model).match(/\d+/g) ?? []).map((part) => Number(part));
+}
+
+function getModelVersionText(model: { id?: string; version?: string; name?: string }): string {
+    const version = model.version?.trim();
+    if (version && version !== "1") {
+        return version;
+    }
+
+    return model.id ?? version ?? model.name ?? "";
+}
+
+function modelMatchesPreferencePattern(
+    model: { family: string; id?: string; name?: string },
+    pattern: RegExp,
+): boolean {
+    return [model.family, model.id, model.name].some((value) => {
+        if (!value) {
+            return false;
+        }
+
+        pattern.lastIndex = 0;
+        return pattern.test(value);
+    });
 }
 
 export async function collectText(

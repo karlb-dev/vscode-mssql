@@ -58,7 +58,7 @@ suite("CodexCliLanguageModelProvider", () => {
         } as vscode.CancellationToken);
 
         expect(models.map((model) => model.id)).to.deep.equal(
-            defaultCodexCliModels.map((model) => `openai-cli/${model.id}`),
+            defaultCodexCliModels.map((model) => model.id),
         );
     });
 
@@ -151,7 +151,7 @@ suite("CodexCliLanguageModelProvider", () => {
 
 function defaultModel() {
     return {
-        id: "openai-cli/gpt-5-codex",
+        id: "gpt-5-codex",
         name: "GPT-5 Codex (CLI)",
         family: "gpt-5-codex",
         version: "gpt-5-codex",

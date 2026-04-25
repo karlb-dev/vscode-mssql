@@ -58,7 +58,7 @@ suite("OpenAiSdkLanguageModelProvider", () => {
         );
 
         expect(models.map((model) => model.id)).to.deep.equal(
-            defaultOpenAiSdkModels.map((model) => `openai-api/${model.id}`),
+            defaultOpenAiSdkModels.map((model) => model.id),
         );
     });
 
@@ -88,7 +88,7 @@ suite("OpenAiSdkLanguageModelProvider", () => {
         );
 
         expect(models.at(-1)).to.include({
-            id: "openai-api/gpt-private",
+            id: "gpt-private",
             name: "GPT Private",
             maxInputTokens: 321,
             maxOutputTokens: 54,
@@ -120,6 +120,8 @@ suite("OpenAiSdkLanguageModelProvider", () => {
         expect(textOf(progressParts)).to.equal("SELECT 1");
         const params = create.firstCall.args[0] as ChatCompletionCreateParamsStreaming;
         expect(params.stream_options).to.deep.equal({ include_usage: true });
+        expect(params.max_completion_tokens).to.equal(128000);
+        expect(params).not.to.have.property("max_tokens");
         expect(params.messages).to.deep.equal([
             { role: "system", content: "system rules" },
             { role: "user", content: "complete this" },
@@ -146,6 +148,22 @@ suite("OpenAiSdkLanguageModelProvider", () => {
 
         expect(stream.controller.signal.aborted).to.equal(true);
         cts.dispose();
+    });
+
+    test("request token limit uses the OpenAI max_completion_tokens parameter", async () => {
+        const create = sandbox.stub().resolves(new FakeOpenAiStream([]));
+
+        await createProviderWithClient(create).provideLanguageModelChatResponse(
+            defaultModel(),
+            [vscode.LanguageModelChatMessage.User("rules")],
+            { modelOptions: { maxTokens: 240, max_tokens: 999 } },
+            { report: sandbox.stub() },
+            cancellationToken(),
+        );
+
+        const params = create.firstCall.args[0] as ChatCompletionCreateParamsStreaming;
+        expect(params.max_completion_tokens).to.equal(240);
+        expect(params).not.to.have.property("max_tokens");
     });
 
     test("AuthenticationError maps to NoPermissions and RateLimitError maps to Blocked", async () => {
@@ -279,7 +297,7 @@ function createContextWithKey(): vscode.ExtensionContext {
 
 function defaultModel() {
     return {
-        id: "openai-api/gpt-5.4-mini",
+        id: "gpt-5.4-mini",
         name: "GPT-5.4 Mini",
         family: "gpt-5.4-mini",
         version: "gpt-5.4-mini",

@@ -32,6 +32,7 @@ import {
 } from "@fluentui/react-icons";
 import {
     InlineCompletionCategory,
+    InlineCompletionDebugProfileId,
     InlineCompletionDebugWebviewState,
     inlineCompletionCategories,
 } from "../../../../sharedInterfaces/inlineCompletionDebug";
@@ -137,6 +138,7 @@ export const InlineCompletionDebugToolbar = ({
     const classes = useStyles();
     const {
         clearEvents,
+        selectProfile,
         updateOverrides,
         setRecordWhenClosed,
         openCustomPromptDialog,
@@ -151,8 +153,16 @@ export const InlineCompletionDebugToolbar = ({
         });
     }, []);
 
-    const selectedModelOption = state.overrides.modelFamily ?? "__default__";
+    const selectedProfileOption = state.overrides.profileId ?? "custom";
+    const selectedProfile = state.profiles.find((profile) => profile.id === selectedProfileOption);
+    const selectedProfileDisplayValue = selectedProfile?.label ?? "Custom";
+    const selectedModelOption = state.overrides.modelSelector ?? "__default__";
     const defaultModelLabel = getDefaultModelLabel(state);
+    const selectedModelDisplayValue =
+        state.availableModels.find((model) => model.selector === state.overrides.modelSelector)
+            ?.label ??
+        state.overrides.modelSelector ??
+        defaultModelLabel;
     const schemaContextChecked =
         state.overrides.useSchemaContext ?? state.defaults.useSchemaContext;
     const autoTriggerChecked =
@@ -269,24 +279,50 @@ export const InlineCompletionDebugToolbar = ({
 
                 <ToolbarDivider />
 
+                <Tooltip
+                    content={selectedProfile?.description ?? "Session-only debug settings"}
+                    relationship="description">
+                    <Field label="Profile" className={classes.field}>
+                        <Dropdown
+                            size="small"
+                            selectedOptions={[selectedProfileOption]}
+                            value={selectedProfileDisplayValue}
+                            onOptionSelect={(_, data) => {
+                                selectProfile(
+                                    (data.optionValue ??
+                                        "custom") as InlineCompletionDebugProfileId,
+                                );
+                                blurActiveElementSoon();
+                            }}>
+                            {state.profiles.map((profile) => (
+                                <Option key={profile.id} value={profile.id} text={profile.label}>
+                                    {profile.label}
+                                </Option>
+                            ))}
+                        </Dropdown>
+                    </Field>
+                </Tooltip>
+
                 <Field label="Model" className={classes.field}>
                     <Dropdown
                         size="small"
                         selectedOptions={[selectedModelOption]}
-                        value={state.overrides.modelFamily ?? defaultModelLabel}
+                        value={selectedModelDisplayValue}
                         onOptionSelect={(_, data) => {
                             updateOverrides({
-                                modelFamily:
+                                modelSelector:
                                     data.optionValue === "__default__"
                                         ? null
                                         : (data.optionValue ?? null),
                             });
                             blurActiveElementSoon();
                         }}>
-                        <Option value="__default__">{defaultModelLabel}</Option>
+                        <Option value="__default__" text={defaultModelLabel}>
+                            {defaultModelLabel}
+                        </Option>
                         {state.availableModels.map((model) => (
-                            <Option key={`${model.vendor}/${model.id}`} value={model.family}>
-                                {model.name}
+                            <Option key={model.selector} value={model.selector} text={model.label}>
+                                {model.label}
                             </Option>
                         ))}
                     </Dropdown>
@@ -461,9 +497,18 @@ export const InlineCompletionDebugToolbar = ({
 };
 
 function getDefaultModelLabel(state: InlineCompletionDebugWebviewState): string {
-    const defaultModelFamily =
-        state.defaults.effectiveModelFamily ?? state.defaults.configuredModelFamily;
-    return defaultModelFamily ? `${defaultModelFamily} (default)` : "(default)";
+    const profile = state.profiles.find(
+        (item) => item.id === state.overrides.profileId && item.id !== "custom",
+    );
+    const suffix = profile ? `${profile.label} default` : "default";
+    const label = state.defaults.effectiveModelLabel;
+    if (label) {
+        return `${label} (${suffix})`;
+    }
+
+    const fallback =
+        state.defaults.effectiveModelSelector ?? state.defaults.configuredModelSelector;
+    return fallback ? `${fallback} (${suffix})` : `(${suffix})`;
 }
 
 function completionCategoriesEqual(

@@ -10,8 +10,10 @@ import {
     InlineCompletionDebugEvent,
     InlineCompletionDebugOverrides,
     InlineCompletionDebugExportData,
+    InlineCompletionDebugProfileId,
     inlineCompletionCategories,
 } from "../../sharedInterfaces/inlineCompletionDebug";
+import { isInlineCompletionDebugProfileId } from "./inlineCompletionDebugProfiles";
 
 const DEFAULT_EVENT_CAPACITY = 500;
 const MAX_PROMPT_AND_SCHEMA_CHARS = 64 * 1024;
@@ -19,7 +21,8 @@ const TRUNCATION_SUFFIX_PREFIX = "... [truncated, ";
 const TRUNCATION_SUFFIX_SUFFIX = " more chars]";
 
 const defaultOverrides: InlineCompletionDebugOverrides = {
-    modelFamily: null,
+    profileId: null,
+    modelSelector: null,
     useSchemaContext: null,
     debounceMs: null,
     maxTokens: null,
@@ -113,7 +116,9 @@ class InlineCompletionDebugStore {
 
         this._events = importedEvents;
         this._eventCounter = this.getHighestImportedCounter(importedEvents);
-        this._overrides = normalizeOverrides(data.overrides ?? defaultOverrides);
+        this._overrides = normalizeOverrides(
+            normalizeImportedOverrides(data.overrides) ?? defaultOverrides,
+        );
         this._logger.info(
             `Imported ${importedEvents.length} inline completion debug events into the store.`,
         );
@@ -198,7 +203,8 @@ function normalizeOverrides(
     overrides: Partial<InlineCompletionDebugOverrides>,
 ): InlineCompletionDebugOverrides {
     return {
-        modelFamily: normalizeNullableString(overrides.modelFamily),
+        profileId: normalizeNullableProfileId(overrides.profileId),
+        modelSelector: normalizeNullableString(overrides.modelSelector),
         useSchemaContext: normalizeNullableBoolean(overrides.useSchemaContext),
         debounceMs: normalizeNullableNumber(overrides.debounceMs),
         maxTokens: normalizeNullableNumber(overrides.maxTokens),
@@ -214,8 +220,11 @@ function normalizePartialOverrides(
 ): Partial<InlineCompletionDebugOverrides> {
     const normalized: Partial<InlineCompletionDebugOverrides> = {};
 
-    if (Object.prototype.hasOwnProperty.call(overrides, "modelFamily")) {
-        normalized.modelFamily = normalizeNullableString(overrides.modelFamily);
+    if (Object.prototype.hasOwnProperty.call(overrides, "profileId")) {
+        normalized.profileId = normalizeNullableProfileId(overrides.profileId);
+    }
+    if (Object.prototype.hasOwnProperty.call(overrides, "modelSelector")) {
+        normalized.modelSelector = normalizeNullableString(overrides.modelSelector);
     }
     if (Object.prototype.hasOwnProperty.call(overrides, "useSchemaContext")) {
         normalized.useSchemaContext = normalizeNullableBoolean(overrides.useSchemaContext);
@@ -246,6 +255,25 @@ function normalizePartialOverrides(
     return normalized;
 }
 
+function normalizeImportedOverrides(
+    overrides: InlineCompletionDebugOverrides | undefined,
+): InlineCompletionDebugOverrides | undefined {
+    if (!overrides) {
+        return undefined;
+    }
+
+    if (overrides.modelSelector !== undefined && overrides.modelSelector !== null) {
+        return overrides;
+    }
+
+    const legacy = (overrides as unknown as { modelFamily?: string | null }).modelFamily;
+    if (typeof legacy === "string") {
+        return { ...overrides, modelSelector: legacy };
+    }
+
+    return overrides;
+}
+
 function normalizeNullableString(
     value: string | null | undefined,
     preserveWhitespace: boolean = false,
@@ -256,6 +284,16 @@ function normalizeNullableString(
 
     const normalized = preserveWhitespace ? value : value.trim();
     return normalized.length > 0 ? normalized : null;
+}
+
+function normalizeNullableProfileId(
+    value: InlineCompletionDebugProfileId | string | null | undefined,
+): InlineCompletionDebugProfileId | null {
+    if (!isInlineCompletionDebugProfileId(value)) {
+        return null;
+    }
+
+    return value;
 }
 
 function normalizeNullableBoolean(value: boolean | null | undefined): boolean | null {

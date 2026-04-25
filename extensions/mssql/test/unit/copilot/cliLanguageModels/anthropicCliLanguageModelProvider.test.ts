@@ -58,7 +58,7 @@ suite("AnthropicCliLanguageModelProvider", () => {
         } as vscode.CancellationToken);
 
         expect(models.map((model) => model.id)).to.deep.equal(
-            defaultAnthropicCliModels.map((model) => `anthropic-cli/${model.id}`),
+            defaultAnthropicCliModels.map((model) => model.id),
         );
         expect(models[0].capabilities).to.deep.equal({ toolCalling: false, imageInput: false });
     });
@@ -192,7 +192,7 @@ suite("AnthropicCliLanguageModelProvider", () => {
 
 function defaultModel() {
     return {
-        id: "anthropic-cli/claude-sonnet-4-5-20250929",
+        id: "claude-sonnet-4-5-20250929",
         name: "Claude Sonnet 4.5 (CLI)",
         family: "claude-sonnet",
         version: "claude-sonnet-4-5-20250929",

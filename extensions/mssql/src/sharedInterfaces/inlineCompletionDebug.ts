@@ -18,13 +18,24 @@ export const inlineCompletionCategories = ["continuation", "intent"] as const;
 
 export type InlineCompletionCategory = (typeof inlineCompletionCategories)[number];
 
+export const inlineCompletionDebugProfileIds = ["focused", "balanced", "broad", "custom"] as const;
+
+export type InlineCompletionDebugProfileId = (typeof inlineCompletionDebugProfileIds)[number];
+
+export interface InlineCompletionDebugProfileOption {
+    id: InlineCompletionDebugProfileId;
+    label: string;
+    description: string;
+}
+
 export interface InlineCompletionDebugPromptMessage {
     role: "user" | "assistant";
     content: string;
 }
 
 export interface InlineCompletionDebugOverridesApplied {
-    modelFamily?: string;
+    profileId?: InlineCompletionDebugProfileId;
+    modelSelector?: string;
     useSchemaContext?: boolean;
     debounceMs?: number;
     maxTokens?: number;
@@ -72,7 +83,10 @@ export interface InlineCompletionDebugEvent {
 }
 
 export interface InlineCompletionDebugOverrides {
-    modelFamily: string | null;
+    profileId: InlineCompletionDebugProfileId | null;
+    // A model selector is `<vendor>/<id>`, but a bare family string is also
+    // accepted for backwards compatibility with `mssql.copilot.inlineCompletions.modelFamily`.
+    modelSelector: string | null;
     useSchemaContext: boolean | null;
     debounceMs: number | null;
     maxTokens: number | null;
@@ -83,6 +97,9 @@ export interface InlineCompletionDebugOverrides {
 }
 
 export interface InlineCompletionDebugModelOption {
+    selector: string;
+    label: string;
+    providerLabel: string;
     id: string;
     name: string;
     family: string;
@@ -91,8 +108,9 @@ export interface InlineCompletionDebugModelOption {
 }
 
 export interface InlineCompletionDebugDefaults {
-    configuredModelFamily?: string;
-    effectiveModelFamily?: string;
+    configuredModelSelector?: string;
+    effectiveModelSelector?: string;
+    effectiveModelLabel?: string;
     useSchemaContext: boolean;
     debounceMs: number;
     continuationMaxTokens: number;
@@ -112,6 +130,7 @@ export interface InlineCompletionDebugWebviewState {
     events: InlineCompletionDebugEvent[];
     overrides: InlineCompletionDebugOverrides;
     defaults: InlineCompletionDebugDefaults;
+    profiles: InlineCompletionDebugProfileOption[];
     availableModels: InlineCompletionDebugModelOption[];
     selectedEventId?: string;
     recordWhenClosed: boolean;
@@ -125,6 +144,9 @@ export interface InlineCompletionDebugReducers {
     };
     updateOverrides: {
         overrides: Partial<InlineCompletionDebugOverrides>;
+    };
+    selectProfile: {
+        profileId: InlineCompletionDebugProfileId;
     };
     setRecordWhenClosed: {
         enabled: boolean;

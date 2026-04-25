@@ -260,9 +260,7 @@ export abstract class CliLanguageModelProviderBase {
     ) => StreamYield | StreamYield[] | undefined;
 
     protected getModelId(model: LanguageModelChatInformation): string {
-        return model.id.startsWith(`${this.vendor}/`)
-            ? model.id.slice(this.vendor.length + 1)
-            : model.id;
+        return model.id;
     }
 
     private toLanguageModelChatInformation(

@@ -6,6 +6,7 @@
 import { createContext, ReactNode, useCallback, useContext } from "react";
 import { useVscodeWebview } from "../../common/vscodeWebviewProvider";
 import {
+    InlineCompletionDebugProfileId,
     InlineCompletionDebugReducers,
     InlineCompletionDebugWebviewState,
 } from "../../../sharedInterfaces/inlineCompletionDebug";
@@ -14,6 +15,7 @@ export interface InlineCompletionDebugContextProps {
     clearEvents: () => void;
     selectEvent: (eventId?: string) => void;
     updateOverrides: (overrides: Partial<InlineCompletionDebugWebviewState["overrides"]>) => void;
+    selectProfile: (profileId: InlineCompletionDebugProfileId) => void;
     setRecordWhenClosed: (enabled: boolean) => void;
     openCustomPromptDialog: () => void;
     closeCustomPromptDialog: () => void;
@@ -59,6 +61,13 @@ export const InlineCompletionDebugStateProvider = ({ children }: { children: Rea
     const updateOverrides = useCallback(
         (overrides: Partial<InlineCompletionDebugWebviewState["overrides"]>) => {
             extensionRpc.action("updateOverrides", { overrides });
+        },
+        [extensionRpc],
+    );
+
+    const selectProfile = useCallback(
+        (profileId: InlineCompletionDebugProfileId) => {
+            extensionRpc.action("selectProfile", { profileId });
         },
         [extensionRpc],
     );
@@ -127,6 +136,7 @@ export const InlineCompletionDebugStateProvider = ({ children }: { children: Rea
                 clearEvents,
                 selectEvent,
                 updateOverrides,
+                selectProfile,
                 setRecordWhenClosed,
                 openCustomPromptDialog,
                 closeCustomPromptDialog,

@@ -211,9 +211,7 @@ export abstract class SdkLanguageModelProviderBase {
     }
 
     protected getModelId(model: LanguageModelChatInformation): string {
-        return model.id.startsWith(`${this.vendor}/`)
-            ? model.id.slice(this.vendor.length + 1)
-            : model.id;
+        return model.id;
     }
 
     protected getBaseUrl(): string | undefined {
