@@ -345,6 +345,21 @@ export class InlineCompletionDebugController extends WebviewPanelController<
             });
         });
 
+        this.registerReducer("sessionsSetAllTraces", async (state, payload) => {
+            this._sessionsState = {
+                ...this._sessionsState,
+                traceIndex: this._sessionsState.traceIndex.map((entry) => ({
+                    ...entry,
+                    included: payload.included,
+                })),
+            };
+            await this.loadIncludedSessionTraces();
+            return this.createState({
+                selectedEventId: state.selectedEventId,
+                customPromptDialogOpen: state.customPrompt.dialogOpen,
+            });
+        });
+
         this.registerReducer("sessionsLoadIncluded", async (state) => {
             await this.loadIncludedSessionTraces();
             return this.createState({

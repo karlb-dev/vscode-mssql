@@ -29,6 +29,7 @@ export interface InlineCompletionDebugContextProps {
     sessionsActivated: () => void;
     sessionsRefresh: () => void;
     sessionsToggleTrace: (fileKey: string, included: boolean) => void;
+    sessionsSetAllTraces: (included: boolean) => void;
     sessionsLoadIncluded: () => void;
     sessionsAddFile: () => void;
     sessionsChangeFolder: () => void;
@@ -140,6 +141,13 @@ export const InlineCompletionDebugStateProvider = ({ children }: { children: Rea
         [extensionRpc],
     );
 
+    const sessionsSetAllTraces = useCallback(
+        (included: boolean) => {
+            extensionRpc.action("sessionsSetAllTraces", { included });
+        },
+        [extensionRpc],
+    );
+
     const sessionsLoadIncluded = useCallback(() => {
         extensionRpc.action("sessionsLoadIncluded", {});
     }, [extensionRpc]);
@@ -206,6 +214,7 @@ export const InlineCompletionDebugStateProvider = ({ children }: { children: Rea
                 sessionsActivated,
                 sessionsRefresh,
                 sessionsToggleTrace,
+                sessionsSetAllTraces,
                 sessionsLoadIncluded,
                 sessionsAddFile,
                 sessionsChangeFolder,

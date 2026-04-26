@@ -43,15 +43,27 @@ export function InlineCompletionDebugTabBar({
     liveCount,
     traceCount,
     sessionEventCount,
+    sessionsScanned,
+    sessionsLoading,
     onTabChange,
 }: {
     activeTab: InlineCompletionDebugTab;
     liveCount: number;
     traceCount: number;
     sessionEventCount: number;
+    sessionsScanned: boolean;
+    sessionsLoading: boolean;
     onTabChange: (tab: InlineCompletionDebugTab) => void;
 }) {
     const classes = useStyles();
+    const sessionsBadge = sessionsLoading
+        ? "..."
+        : sessionsScanned
+          ? `${traceCount} traces · ${sessionEventCount} events`
+          : "--";
+    const sessionsBadgeTitle = sessionsScanned
+        ? `${traceCount} included trace files, ${sessionEventCount} included events`
+        : "Trace folder is scanned when the Sessions tab is opened.";
     return (
         <div className={classes.root}>
             <TabList
@@ -62,8 +74,8 @@ export function InlineCompletionDebugTabBar({
                 </Tab>
                 <Tab value="sessions">
                     Sessions{" "}
-                    <span className={classes.badge}>
-                        {traceCount} / {sessionEventCount}
+                    <span className={classes.badge} title={sessionsBadgeTitle}>
+                        {sessionsBadge}
                     </span>
                 </Tab>
             </TabList>

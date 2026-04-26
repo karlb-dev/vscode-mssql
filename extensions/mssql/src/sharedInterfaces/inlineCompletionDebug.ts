@@ -228,6 +228,9 @@ export interface InlineCompletionDebugReducers {
         fileKey: string;
         included: boolean;
     };
+    sessionsSetAllTraces: {
+        included: boolean;
+    };
     sessionsLoadIncluded: Record<string, never>;
     sessionsAddFile: Record<string, never>;
     sessionsChangeFolder: Record<string, never>;

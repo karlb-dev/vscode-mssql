@@ -34,6 +34,10 @@ export function InlineCompletionDebugApp() {
     const [activeTab, setActiveTab] = useState<InlineCompletionDebugTab>("live");
     const liveCount = useInlineCompletionDebugSelector((state) => state.events.length);
     const sessions = useInlineCompletionDebugSelector((state) => state.sessions);
+    const includedTraceCount = useMemo(
+        () => sessions.traceIndex.filter((entry) => entry.included).length,
+        [sessions.traceIndex],
+    );
     const sessionEventCount = useMemo(
         () =>
             sessions.traceIndex
@@ -41,14 +45,18 @@ export function InlineCompletionDebugApp() {
                 .reduce((sum, entry) => sum + entry.eventCount, 0),
         [sessions.traceIndex],
     );
+    const sessionsScanned =
+        sessions.lastRefreshedAt !== undefined || sessions.traceIndex.length > 0;
 
     return (
         <div className={classes.root}>
             <InlineCompletionDebugTabBar
                 activeTab={activeTab}
                 liveCount={liveCount}
-                traceCount={sessions.traceIndex.length}
+                traceCount={includedTraceCount}
                 sessionEventCount={sessionEventCount}
+                sessionsScanned={sessionsScanned}
+                sessionsLoading={sessions.loading}
                 onTabChange={setActiveTab}
             />
             <div className={activeTab === "live" ? classes.content : classes.hidden}>

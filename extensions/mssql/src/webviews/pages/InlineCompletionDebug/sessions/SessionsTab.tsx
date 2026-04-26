@@ -22,6 +22,8 @@ import {
     AddRegular,
     ArrowDownloadRegular,
     ArrowSyncRegular,
+    ChevronDown16Regular,
+    ChevronRight16Regular,
     DatabaseLinkRegular,
     FolderOpenRegular,
 } from "@fluentui/react-icons";
@@ -98,28 +100,43 @@ const useStyles = makeStyles({
     datasetHeader: {
         display: "grid",
         gridTemplateColumns: "minmax(220px, 1fr) auto",
-        columnGap: "12px",
+        columnGap: "10px",
         alignItems: "center",
-        minHeight: "40px",
-        ...shorthands.padding("0", "12px"),
+        minHeight: "36px",
+        ...shorthands.padding("0", "10px"),
     },
     folderText: {
+        display: "flex",
+        alignItems: "center",
+        gap: "6px",
         minWidth: 0,
         overflowX: "hidden",
-        textOverflow: "ellipsis",
         whiteSpace: "nowrap",
         fontFamily: "var(--vscode-editor-font-family, Consolas, monospace)",
         color: "var(--vscode-descriptionForeground)",
     },
+    folderPath: {
+        minWidth: 0,
+        overflowX: "hidden",
+        textOverflow: "ellipsis",
+    },
+    fileListToggle: {
+        flexShrink: 0,
+    },
     datasetActions: {
         display: "flex",
-        gap: "8px",
+        gap: "6px",
+        alignItems: "center",
+    },
+    traceToggleActions: {
+        display: "flex",
+        gap: "2px",
         alignItems: "center",
     },
     datasetTable: {
         display: "grid",
-        gridTemplateColumns: "34px minmax(280px, 1fr) 140px 78px 84px 118px 118px",
-        maxHeight: "172px",
+        gridTemplateColumns: "34px minmax(280px, 1fr) 180px 72px 82px 108px 108px",
+        maxHeight: "176px",
         overflowY: "auto",
         ...shorthands.borderTop("1px", "solid", "var(--vscode-panel-border)"),
     },
@@ -134,7 +151,7 @@ const useStyles = makeStyles({
         letterSpacing: "0.04em",
     },
     datasetCell: {
-        minHeight: "28px",
+        minHeight: "24px",
         display: "flex",
         alignItems: "center",
         minWidth: 0,
@@ -150,6 +167,9 @@ const useStyles = makeStyles({
         textOverflow: "ellipsis",
         whiteSpace: "nowrap",
     },
+    savedCell: {
+        whiteSpace: "nowrap",
+    },
     summary: {
         display: "grid",
         gridTemplateColumns: "repeat(7, minmax(120px, 1fr))",
@@ -157,8 +177,8 @@ const useStyles = makeStyles({
         ...shorthands.borderBottom("1px", "solid", "var(--vscode-panel-border)"),
     },
     statTile: {
-        minHeight: "60px",
-        ...shorthands.padding("8px", "10px"),
+        minHeight: "52px",
+        ...shorthands.padding("6px", "10px"),
         ...shorthands.borderRight("1px", "solid", "var(--vscode-panel-border)"),
     },
     statLabel: {
@@ -169,14 +189,16 @@ const useStyles = makeStyles({
     },
     statValue: {
         display: "block",
-        marginTop: "4px",
+        marginTop: "3px",
         fontSize: tokens.fontSizeBase400,
-        lineHeight: "20px",
+        lineHeight: "18px",
     },
     statHint: {
-        marginLeft: "6px",
+        display: "block",
+        marginTop: "1px",
         color: "var(--vscode-descriptionForeground)",
         fontSize: tokens.fontSizeBase200,
+        lineHeight: "16px",
     },
     body: {
         ...shorthands.flex(1),
@@ -418,6 +440,7 @@ export function SessionsTab({ active }: { active: boolean }) {
         sessionsActivated,
         sessionsRefresh,
         sessionsToggleTrace,
+        sessionsSetAllTraces,
         sessionsLoadIncluded,
         sessionsAddFile,
         sessionsChangeFolder,
@@ -569,6 +592,7 @@ export function SessionsTab({ active }: { active: boolean }) {
                 onChangeFolder={sessionsChangeFolder}
                 onAddFile={sessionsAddFile}
                 onToggleTrace={sessionsToggleTrace}
+                onSetAllTraces={sessionsSetAllTraces}
             />
             {sessions.error ? <div className={classes.empty}>{sessions.error}</div> : null}
             {!sessions.error ? (
@@ -684,6 +708,7 @@ function DatasetSelector({
     onChangeFolder,
     onAddFile,
     onToggleTrace,
+    onSetAllTraces,
 }: {
     traceFolder: string;
     entries: InlineCompletionDebugTraceIndexEntry[];
@@ -692,34 +717,78 @@ function DatasetSelector({
     onChangeFolder: () => void;
     onAddFile: () => void;
     onToggleTrace: (fileKey: string, included: boolean) => void;
+    onSetAllTraces: (included: boolean) => void;
 }) {
     const classes = useStyles();
     const { sessionsSyncToDatabase } = useInlineCompletionDebugContext();
+    const [fileListOpen, setFileListOpen] = useState(false);
     const included = entries.filter((entry) => entry.included);
     const eventCount = included.reduce((sum, entry) => sum + entry.eventCount, 0);
     const range = getDatasetRange(included);
+    const allIncluded = entries.length > 0 && included.length === entries.length;
+    const noneIncluded = included.length === 0;
 
     return (
         <div className={classes.dataset}>
             <div className={classes.datasetHeader}>
-                <div className={classes.folderText}>FOLDER&nbsp;&nbsp;{traceFolder}</div>
+                <div className={classes.folderText}>
+                    <FluentTooltip
+                        content={fileListOpen ? "Hide trace files" : "Show trace files"}
+                        relationship="label">
+                        <Button
+                            appearance="subtle"
+                            size="small"
+                            className={classes.fileListToggle}
+                            icon={
+                                fileListOpen ? <ChevronDown16Regular /> : <ChevronRight16Regular />
+                            }
+                            onClick={() => setFileListOpen((value) => !value)}
+                        />
+                    </FluentTooltip>
+                    <span className={classes.folderPath}>FOLDER&nbsp;&nbsp;{traceFolder}</span>
+                </div>
                 <div className={classes.datasetActions}>
                     <Text className={classes.pivotMeta}>
                         {included.length}/{entries.length} traces · {eventCount.toLocaleString()}{" "}
                         events{range ? ` · ${range}` : ""}
                     </Text>
-                    <Button icon={<ArrowSyncRegular />} onClick={onRefresh} disabled={loading}>
+                    <div className={classes.traceToggleActions}>
+                        <FluentTooltip content="Select all traces" relationship="label">
+                            <Button
+                                appearance="subtle"
+                                size="small"
+                                disabled={allIncluded || entries.length === 0}
+                                onClick={() => onSetAllTraces(true)}>
+                                All
+                            </Button>
+                        </FluentTooltip>
+                        <FluentTooltip content="Deselect all traces" relationship="label">
+                            <Button
+                                appearance="subtle"
+                                size="small"
+                                disabled={noneIncluded || entries.length === 0}
+                                onClick={() => onSetAllTraces(false)}>
+                                None
+                            </Button>
+                        </FluentTooltip>
+                    </div>
+                    <Button
+                        icon={<ArrowSyncRegular />}
+                        size="small"
+                        onClick={onRefresh}
+                        disabled={loading}>
                         Refresh
                     </Button>
-                    <Button icon={<FolderOpenRegular />} onClick={onChangeFolder}>
+                    <Button icon={<FolderOpenRegular />} size="small" onClick={onChangeFolder}>
                         Change folder
                     </Button>
-                    <Button icon={<AddRegular />} onClick={onAddFile}>
+                    <Button icon={<AddRegular />} size="small" onClick={onAddFile}>
                         Add file
                     </Button>
                     <FluentTooltip content="Coming soon" relationship="label">
                         <Button
                             icon={<DatabaseLinkRegular />}
+                            size="small"
                             disabled
                             onClick={sessionsSyncToDatabase}>
                             Sync to DB
@@ -727,18 +796,22 @@ function DatasetSelector({
                     </FluentTooltip>
                 </div>
             </div>
-            <div className={classes.datasetTable}>
-                {["", "Filename", "Saved", "Events", "Size", "Profile", "Schema"].map((label) => (
-                    <div
-                        key={label || "checkbox"}
-                        className={mergeClasses(classes.datasetCell, classes.tableHeader)}>
-                        {label}
-                    </div>
-                ))}
-                {entries.map((entry) => (
-                    <TraceRow key={entry.fileKey} entry={entry} onToggleTrace={onToggleTrace} />
-                ))}
-            </div>
+            {fileListOpen ? (
+                <div className={classes.datasetTable}>
+                    {["", "Filename", "Saved", "Events", "Size", "Profile", "Schema"].map(
+                        (label) => (
+                            <div
+                                key={label || "checkbox"}
+                                className={mergeClasses(classes.datasetCell, classes.tableHeader)}>
+                                {label}
+                            </div>
+                        ),
+                    )}
+                    {entries.map((entry) => (
+                        <TraceRow key={entry.fileKey} entry={entry} onToggleTrace={onToggleTrace} />
+                    ))}
+                </div>
+            ) : null}
         </div>
     );
 }
@@ -764,7 +837,7 @@ function TraceRow({
                 title={entry.loadError ?? entry.path}>
                 {entry.filename}
             </div>
-            <div className={mergeClasses(classes.datasetCell, classes.mono)}>
+            <div className={mergeClasses(classes.datasetCell, classes.mono, classes.savedCell)}>
                 {entry.savedAt ? formatShortDate(entry.savedAt) : "--"}
             </div>
             <div className={mergeClasses(classes.datasetCell, classes.mono)}>
@@ -1121,11 +1194,12 @@ function ChartsPanel({
         error: row.metrics.errorCount,
     }));
     const timeSeriesData = useMemo(() => createTimeSeriesPoints(events), [events]);
+    const groupChartHeight = getGroupChartHeight(groupData.length);
     return (
         <div className={classes.sideCharts}>
             <div className={classes.chartPanel}>
                 <div className={classes.chartTitle}>By group · latency p95</div>
-                <div className={classes.chartBox}>
+                <div className={classes.chartBox} style={{ height: groupChartHeight }}>
                     <ResponsiveContainer>
                         <BarChart data={groupData} layout="vertical" margin={chartMargin}>
                             <CartesianGrid stroke="var(--vscode-panel-border)" horizontal={false} />
@@ -1148,7 +1222,7 @@ function ChartsPanel({
             </div>
             <div className={classes.chartPanel}>
                 <div className={classes.chartTitle}>Acceptance funnel</div>
-                <div className={classes.chartBox}>
+                <div className={classes.chartBox} style={{ height: groupChartHeight }}>
                     <ResponsiveContainer>
                         <BarChart data={groupData} layout="vertical" margin={chartMargin}>
                             <CartesianGrid stroke="var(--vscode-panel-border)" horizontal={false} />
@@ -1171,7 +1245,7 @@ function ChartsPanel({
             </div>
             <div className={classes.chartPanel}>
                 <div className={classes.chartTitle}>Token cost in / out</div>
-                <div className={classes.chartBox}>
+                <div className={classes.chartBox} style={{ height: groupChartHeight }}>
                     <ResponsiveContainer>
                         <BarChart data={groupData} layout="vertical" margin={chartMargin}>
                             <CartesianGrid stroke="var(--vscode-panel-border)" horizontal={false} />
@@ -1196,10 +1270,13 @@ function ChartsPanel({
                     <ResponsiveContainer>
                         <LineChart data={timeSeriesData} margin={chartMargin}>
                             <CartesianGrid stroke="var(--vscode-panel-border)" vertical={false} />
-                            <XAxis dataKey="bucket" tick={axisTick} />
+                            <XAxis dataKey="bucket" tick={axisTick} minTickGap={16} />
                             <YAxis tick={axisTick} width={42} />
                             <RechartsTooltip
                                 contentStyle={tooltipStyle}
+                                labelFormatter={(_, points) =>
+                                    points?.[0]?.payload?.range ?? "No events"
+                                }
                                 formatter={(value) => `${value} ms`}
                             />
                             <Line
@@ -1215,6 +1292,14 @@ function ChartsPanel({
             </div>
         </div>
     );
+}
+
+function getGroupChartHeight(rowCount: number): number {
+    if (rowCount <= 8) {
+        return 132;
+    }
+
+    return Math.min(240, 198 + Math.max(0, rowCount - 10) * 18);
 }
 
 function updateFacetFilter(
@@ -1423,7 +1508,7 @@ function exportPivotCsv(
 
 function createTimeSeriesPoints(
     events: InlineCompletionDebugEvent[],
-): Array<{ bucket: string; latencyP95: number }> {
+): Array<{ bucket: string; range: string; latencyP95: number }> {
     if (events.length === 0) {
         return [];
     }
@@ -1432,6 +1517,7 @@ function createTimeSeriesPoints(
     const min = sorted[0]?.timestamp ?? 0;
     const max = sorted[sorted.length - 1]?.timestamp ?? min;
     const span = Math.max(1, max - min);
+    const bucketSpan = span / bucketCount;
     const buckets = Array.from({ length: bucketCount }, () => [] as InlineCompletionDebugEvent[]);
     for (const event of sorted) {
         const index = Math.min(
@@ -1441,9 +1527,22 @@ function createTimeSeriesPoints(
         buckets[index]?.push(event);
     }
     return buckets.map((bucket, index) => ({
-        bucket: `${index + 1}`,
+        bucket: formatTimeAxisLabel(min + bucketSpan * index, span),
+        range: `${formatTimeAxisLabel(min + bucketSpan * index, span)}-${formatTimeAxisLabel(
+            min + bucketSpan * (index + 1),
+            span,
+        )}`,
         latencyP95: Math.round(computeInlineCompletionMetrics(bucket).latencyP95),
     }));
+}
+
+function formatTimeAxisLabel(timestamp: number, span: number): string {
+    return new Date(timestamp).toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: span <= 15 * 60 * 1000 ? "2-digit" : undefined,
+        hour12: false,
+    });
 }
 
 function countConfigs(events: InlineCompletionDebugEvent[]): number {
