@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Column, GridOption, SlickgridReactInstance } from "slickgrid-react";
 import { makeStyles } from "@fluentui/react-components";
 import { ColorThemeKind } from "../../../../sharedInterfaces/webview";
@@ -65,6 +65,8 @@ export const InlineCompletionDebugEventGrid = ({
     const autoScrollRef = useRef(autoScroll);
     const eventCountRef = useRef(events.length);
     const pointerDownRef = useRef(false);
+    const hasPendingEvents = events.some((event) => event.result === "pending");
+    const [pendingTick, setPendingTick] = useState(0);
     if (!gridInstanceIdRef.current) {
         gridInstanceIdRef.current = createGridInstanceId();
     }
@@ -77,8 +79,40 @@ export const InlineCompletionDebugEventGrid = ({
     const gridRowsRef = useRef(gridRows);
 
     useEffect(() => {
+        if (!hasPendingEvents) {
+            return undefined;
+        }
+
+        const interval = window.setInterval(() => {
+            setPendingTick((value) => value + 1);
+        }, 1000);
+
+        return () => window.clearInterval(interval);
+    }, [hasPendingEvents]);
+
+    useEffect(() => {
         gridRowsRef.current = gridRows;
     }, [gridRows]);
+
+    useEffect(() => {
+        const reactGrid = reactGridRef.current;
+        if (!reactGrid?.dataView) {
+            return;
+        }
+
+        reactGrid.dataView.setItems(gridRows, GRID_ROW_ID_PROPERTY);
+        reactGrid.slickGrid?.invalidate?.();
+        reactGrid.slickGrid?.render?.();
+    }, [gridRows]);
+
+    useEffect(() => {
+        if (!hasPendingEvents || pendingTick === 0) {
+            return;
+        }
+
+        reactGridRef.current?.slickGrid?.invalidate?.();
+        reactGridRef.current?.slickGrid?.render?.();
+    }, [hasPendingEvents, pendingTick]);
 
     useEffect(() => {
         onSelectEventRef.current = onSelectEvent;
@@ -158,8 +192,13 @@ export const InlineCompletionDebugEventGrid = ({
                 name: "Latency",
                 field: "latencyMs",
                 minWidth: 92,
-                formatter: (_row, _cell, value) =>
-                    monoFormatter(`${Number(value ?? 0).toLocaleString()} ms`),
+                formatter: (_row, _cell, value, _column, event) => {
+                    const latencyMs =
+                        event.result === "pending"
+                            ? Math.max(0, Date.now() - event.timestamp)
+                            : Number(value ?? 0);
+                    return monoFormatter(`${latencyMs.toLocaleString()} ms`);
+                },
             },
             {
                 id: "tokens",
@@ -267,6 +306,9 @@ export const InlineCompletionDebugEventGrid = ({
                                 : copyEventPayload(event.id, "sanitizedResponse");
                             break;
                         case "replay":
+                            if (event.result === "pending") {
+                                break;
+                            }
                             onReplayEvent ? onReplayEvent(event) : replayEvent(event.id);
                             break;
                     }
@@ -386,6 +428,7 @@ export const InlineCompletionDebugEventGrid = ({
     const handleReactGridCreated = useCallback(
         (event: CustomEvent) => {
             reactGridRef.current = event.detail as SlickgridReactInstance;
+            reactGridRef.current.dataView?.setItems(gridRowsRef.current, GRID_ROW_ID_PROPERTY);
             scheduleGridResize();
         },
         [scheduleGridResize],
@@ -500,6 +543,8 @@ function resultTone(result: string): "success" | "warning" | "danger" | "neutral
         case "success":
         case "accepted":
             return "success";
+        case "pending":
+            return "warning";
         case "error":
             return "danger";
         case "cancelled":

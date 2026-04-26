@@ -230,7 +230,7 @@ export const InlineCompletionDebugDetailPane = ({
                             )}
                             {summaryRow("Model", formatEventModel(event), classes)}
                             {summaryRow("Result", event.result, classes)}
-                            {summaryRow("Latency", `${event.latencyMs} ms`, classes)}
+                            {summaryRow("Latency", formatLatency(event), classes)}
                             {summaryRow(
                                 "Tokens",
                                 `in=${formatTokenCount(event.inputTokens)} | out=${formatTokenCount(
@@ -365,6 +365,14 @@ function buildTelemetryRows(event: InlineCompletionDebugEvent): Array<[string, s
 
 function formatTokenCount(value: number | undefined): string {
     return value === undefined ? "unknown" : value.toLocaleString();
+}
+
+function formatLatency(event: InlineCompletionDebugEvent): string {
+    if (event.result !== "pending") {
+        return `${event.latencyMs.toLocaleString()} ms`;
+    }
+
+    return `${Math.max(0, Date.now() - event.timestamp).toLocaleString()} ms (pending)`;
 }
 
 function bucketCount(count: number): string {

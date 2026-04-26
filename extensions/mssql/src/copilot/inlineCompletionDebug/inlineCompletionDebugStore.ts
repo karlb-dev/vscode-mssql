@@ -92,6 +92,26 @@ class InlineCompletionDebugStore {
         return storedEvent;
     }
 
+    public updateEvent(
+        eventId: string,
+        event: Omit<InlineCompletionDebugEvent, "id">,
+    ): InlineCompletionDebugEvent | undefined {
+        const index = this._events.findIndex((storedEvent) => storedEvent.id === eventId);
+        if (index < 0) {
+            return undefined;
+        }
+
+        const storedEvent: InlineCompletionDebugEvent = {
+            ...event,
+            id: eventId,
+        };
+
+        this.applyPromptAndSchemaBudget(storedEvent);
+        this._events[index] = storedEvent;
+        this._onDidChange.fire();
+        return storedEvent;
+    }
+
     public markAccepted(eventId: string): void {
         const event = this.getEvent(eventId);
         if (!event || event.result !== "success") {

@@ -70,11 +70,12 @@ export const InlineCompletionDebugPage = () => {
     );
     const summary = useMemo(() => {
         const documents = new Set(filteredEvents.map((event) => event.documentFileName));
+        const completedEvents = filteredEvents.filter((event) => event.result !== "pending");
         const averageLatency =
-            filteredEvents.length > 0
+            completedEvents.length > 0
                 ? Math.round(
-                      filteredEvents.reduce((sum, event) => sum + event.latencyMs, 0) /
-                          filteredEvents.length,
+                      completedEvents.reduce((sum, event) => sum + event.latencyMs, 0) /
+                          completedEvents.length,
                   )
                 : 0;
         return {
@@ -359,6 +360,10 @@ function stripQuotes(value: string): string {
 }
 
 export function getInfoText(event: InlineCompletionDebugEvent): string {
+    if (event.result === "pending") {
+        return "Waiting for model response...";
+    }
+
     return (
         event.finalCompletionText ??
         event.sanitizedResponse ??

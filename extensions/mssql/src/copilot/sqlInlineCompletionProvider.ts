@@ -224,6 +224,109 @@ export class SqlInlineCompletionProvider
         let modelCallStarted = false;
 
         const modelStartedAt = Date.now();
+        let pendingDebugEventId: string | undefined;
+        const createDebugEvent = (
+            result: InlineCompletionDebugEventResult,
+            error?: unknown,
+            timestamp: number = Date.now(),
+        ): Omit<InlineCompletionDebugEvent, "id"> => ({
+            timestamp,
+            documentUri: document.uri.toString(),
+            documentFileName: path.basename(document.fileName || document.uri.fsPath),
+            line: position.line + 1,
+            column: position.character + 1,
+            triggerKind: getTriggerKindName(triggerKind),
+            explicitFromUser: triggerKind === vscode.InlineCompletionTriggerKind.Invoke,
+            completionCategory,
+            intentMode,
+            inferredSystemQuery,
+            modelFamily: selectedModel?.family,
+            modelId: selectedModel?.id,
+            modelVendor: selectedModel?.vendor,
+            result,
+            latencyMs: Date.now() - modelStartedAt,
+            inputTokens,
+            outputTokens,
+            schemaObjectCount:
+                (schemaContext?.tables.length ?? 0) + (schemaContext?.views.length ?? 0),
+            schemaSystemObjectCount:
+                (schemaContext?.systemObjects?.length ?? 0) +
+                (schemaContext?.masterSymbols.length ?? 0),
+            schemaForeignKeyCount: getForeignKeyCount(schemaContext),
+            usedSchemaContext: !!schemaContext,
+            overridesApplied: {
+                ...(overrides.profileId ? { profileId: overrides.profileId } : {}),
+                ...(overrides.modelSelector ? { modelSelector: overrides.modelSelector } : {}),
+                ...(overrides.useSchemaContext !== null
+                    ? { useSchemaContext: overrides.useSchemaContext }
+                    : {}),
+                ...(overrides.debounceMs !== null ? { debounceMs: overrides.debounceMs } : {}),
+                ...(overrides.maxTokens !== null ? { maxTokens: overrides.maxTokens } : {}),
+                ...(overrides.enabledCategories !== null
+                    ? { enabledCategories: overrides.enabledCategories }
+                    : {}),
+                ...(overrides.schemaContext ? { schemaContext: overrides.schemaContext } : {}),
+                customSystemPromptUsed: !!overrides.customSystemPrompt,
+            },
+            promptMessages: debugPromptMessages,
+            rawResponse: rawText,
+            sanitizedResponse: sanitizedText,
+            finalCompletionText,
+            schemaContextFormatted: schemaContextText,
+            locals: {
+                "context.selectedCompletionInfo": context.selectedCompletionInfo
+                    ? "defined"
+                    : "undefined",
+                "context.triggerKind": context.triggerKind,
+                profileId: overrides.profileId ?? configuredProfileId,
+                "document.languageId": document.languageId,
+                "position.line": position.line,
+                "position.character": position.character,
+                linePrefix,
+                "recentPrefix.length": recentPrefix.length,
+                recentPrefix,
+                "statementPrefix.length": statementPrefix.length,
+                statementPrefix,
+                lineSuffix,
+                "suffix.length": suffix.length,
+                suffix,
+                intentMode,
+                detectedIntentMode,
+                inferredSystemQuery,
+                useSchemaContext,
+                effectiveMaxTokens,
+                effectiveMaxChars,
+                debounceMsApplied,
+                completionCategory,
+                enabledCategories,
+                selectedModelMaxInputTokens: selectedModel?.maxInputTokens,
+                selectedModelName: selectedModel?.name,
+                selectedModelVersion: selectedModel?.version,
+                customSystemPromptActive: !!overrides.customSystemPrompt,
+                schemaBudgetProfile: schemaContextSettings.budgetProfile,
+                schemaSizeKind: schemaContext?.selectionMetadata?.schemaSizeKind,
+                schemaDegradationSteps:
+                    schemaContext?.selectionMetadata?.degradationSteps.join(",") ?? "",
+                schemaMessageOrder: schemaContextSettings.messageOrder,
+                schemaContextChannel: schemaContextSettings.schemaContextChannel,
+            },
+            error: error
+                ? {
+                      message: getErrorMessage(error),
+                      ...(error instanceof Error && error.name ? { name: error.name } : {}),
+                      ...(error instanceof Error && error.stack ? { stack: error.stack } : {}),
+                  }
+                : undefined,
+        });
+        const recordPendingDebugEvent = (): void => {
+            if (!shouldCaptureDebug || pendingDebugEventId) {
+                return;
+            }
+
+            pendingDebugEventId = inlineCompletionDebugStore.addEvent(
+                createDebugEvent("pending", undefined, modelStartedAt),
+            ).id;
+        };
         const recordDebugEvent = (
             result: InlineCompletionDebugEventResult,
             error?: unknown,
@@ -232,95 +335,19 @@ export class SqlInlineCompletionProvider
                 return undefined;
             }
 
-            return inlineCompletionDebugStore.addEvent({
-                timestamp: Date.now(),
-                documentUri: document.uri.toString(),
-                documentFileName: path.basename(document.fileName || document.uri.fsPath),
-                line: position.line + 1,
-                column: position.character + 1,
-                triggerKind: getTriggerKindName(triggerKind),
-                explicitFromUser: triggerKind === vscode.InlineCompletionTriggerKind.Invoke,
-                completionCategory,
-                intentMode,
-                inferredSystemQuery,
-                modelFamily: selectedModel?.family,
-                modelId: selectedModel?.id,
-                modelVendor: selectedModel?.vendor,
+            const debugEvent = createDebugEvent(
                 result,
-                latencyMs: Date.now() - modelStartedAt,
-                inputTokens,
-                outputTokens,
-                schemaObjectCount:
-                    (schemaContext?.tables.length ?? 0) + (schemaContext?.views.length ?? 0),
-                schemaSystemObjectCount:
-                    (schemaContext?.systemObjects?.length ?? 0) +
-                    (schemaContext?.masterSymbols.length ?? 0),
-                schemaForeignKeyCount: getForeignKeyCount(schemaContext),
-                usedSchemaContext: !!schemaContext,
-                overridesApplied: {
-                    ...(overrides.profileId ? { profileId: overrides.profileId } : {}),
-                    ...(overrides.modelSelector ? { modelSelector: overrides.modelSelector } : {}),
-                    ...(overrides.useSchemaContext !== null
-                        ? { useSchemaContext: overrides.useSchemaContext }
-                        : {}),
-                    ...(overrides.debounceMs !== null ? { debounceMs: overrides.debounceMs } : {}),
-                    ...(overrides.maxTokens !== null ? { maxTokens: overrides.maxTokens } : {}),
-                    ...(overrides.enabledCategories !== null
-                        ? { enabledCategories: overrides.enabledCategories }
-                        : {}),
-                    ...(overrides.schemaContext ? { schemaContext: overrides.schemaContext } : {}),
-                    customSystemPromptUsed: !!overrides.customSystemPrompt,
-                },
-                promptMessages: debugPromptMessages,
-                rawResponse: rawText,
-                sanitizedResponse: sanitizedText,
-                finalCompletionText,
-                schemaContextFormatted: schemaContextText,
-                locals: {
-                    "context.selectedCompletionInfo": context.selectedCompletionInfo
-                        ? "defined"
-                        : "undefined",
-                    "context.triggerKind": context.triggerKind,
-                    profileId: overrides.profileId ?? configuredProfileId,
-                    "document.languageId": document.languageId,
-                    "position.line": position.line,
-                    "position.character": position.character,
-                    linePrefix,
-                    "recentPrefix.length": recentPrefix.length,
-                    recentPrefix,
-                    "statementPrefix.length": statementPrefix.length,
-                    statementPrefix,
-                    lineSuffix,
-                    "suffix.length": suffix.length,
-                    suffix,
-                    intentMode,
-                    detectedIntentMode,
-                    inferredSystemQuery,
-                    useSchemaContext,
-                    effectiveMaxTokens,
-                    effectiveMaxChars,
-                    debounceMsApplied,
-                    completionCategory,
-                    enabledCategories,
-                    selectedModelMaxInputTokens: selectedModel?.maxInputTokens,
-                    selectedModelName: selectedModel?.name,
-                    selectedModelVersion: selectedModel?.version,
-                    customSystemPromptActive: !!overrides.customSystemPrompt,
-                    schemaBudgetProfile: schemaContextSettings.budgetProfile,
-                    schemaSizeKind: schemaContext?.selectionMetadata?.schemaSizeKind,
-                    schemaDegradationSteps:
-                        schemaContext?.selectionMetadata?.degradationSteps.join(",") ?? "",
-                    schemaMessageOrder: schemaContextSettings.messageOrder,
-                    schemaContextChannel: schemaContextSettings.schemaContextChannel,
-                },
-                error: error
-                    ? {
-                          message: getErrorMessage(error),
-                          ...(error instanceof Error && error.name ? { name: error.name } : {}),
-                          ...(error instanceof Error && error.stack ? { stack: error.stack } : {}),
-                      }
-                    : undefined,
-            });
+                error,
+                result === "pending" ? modelStartedAt : Date.now(),
+            );
+            if (!pendingDebugEventId) {
+                return inlineCompletionDebugStore.addEvent(debugEvent);
+            }
+
+            return (
+                inlineCompletionDebugStore.updateEvent(pendingDebugEventId, debugEvent) ??
+                inlineCompletionDebugStore.addEvent(debugEvent)
+            );
         };
 
         const sendResultTelemetry = (
@@ -339,6 +366,8 @@ export class SqlInlineCompletionProvider
         };
 
         try {
+            recordPendingDebugEvent();
+
             selectedModel = await this.getLanguageModel(
                 overrides.modelSelector ?? undefined,
                 profile?.modelPreference,
@@ -360,6 +389,7 @@ export class SqlInlineCompletionProvider
             schemaContextSettings = getSqlInlineCompletionSchemaContextRuntimeSettings(
                 selectedModel.maxInputTokens,
             );
+            recordDebugEvent("pending");
 
             const canSendRequest: boolean | undefined =
                 this._context.languageModelAccessInformation?.canSendRequest(selectedModel);
@@ -390,6 +420,7 @@ export class SqlInlineCompletionProvider
             }
 
             if (token.isCancellationRequested) {
+                recordDebugEvent("cancelled");
                 return [];
             }
 
@@ -478,6 +509,7 @@ export class SqlInlineCompletionProvider
                 }
             }
 
+            recordDebugEvent("pending");
             modelCallStarted = true;
             const response = await selectedModel.sendRequest(
                 promptMessages,
@@ -542,7 +574,7 @@ export class SqlInlineCompletionProvider
             ];
         } catch (error) {
             if (isCancellation(token, error)) {
-                if (modelCallStarted) {
+                if (modelCallStarted || pendingDebugEventId) {
                     recordDebugEvent("cancelled", error);
                 }
                 return [];

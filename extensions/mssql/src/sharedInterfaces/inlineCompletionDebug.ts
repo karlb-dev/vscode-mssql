@@ -12,7 +12,7 @@ export type InlineCompletionResult =
     | "noPermission"
     | "error";
 
-export type InlineCompletionDebugEventResult = InlineCompletionResult | "cancelled";
+export type InlineCompletionDebugEventResult = InlineCompletionResult | "cancelled" | "pending";
 
 export const inlineCompletionCategories = ["continuation", "intent"] as const;
 

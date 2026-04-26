@@ -6,7 +6,6 @@
 import { type ReactNode, type Ref, useCallback, useMemo, useState } from "react";
 import {
     Button,
-    Checkbox,
     Dropdown,
     Field,
     Input,
@@ -15,10 +14,9 @@ import {
     Switch,
     Text,
     ToggleButton,
-    Toolbar,
-    ToolbarDivider,
     Tooltip,
     makeStyles,
+    mergeClasses,
     shorthands,
     tokens,
 } from "@fluentui/react-components";
@@ -293,38 +291,142 @@ const useStyles = makeStyles({
         display: "flex",
         flexDirection: "column",
         ...shorthands.borderBottom("1px", "solid", "var(--vscode-panel-border)"),
-        backgroundColor: "var(--vscode-sideBar-background)",
+        backgroundColor: "var(--vscode-editor-background)",
     },
-    row: {
+    statusStrip: {
+        display: "grid",
+        gridTemplateColumns: "minmax(0, 1fr) auto",
+        alignItems: "center",
+        columnGap: "12px",
+        minHeight: "31px",
+        color: "var(--vscode-descriptionForeground)",
+        backgroundColor:
+            "color-mix(in srgb, var(--vscode-editor-background) 88%, var(--vscode-foreground) 12%)",
+        ...shorthands.borderBottom("1px", "solid", "var(--vscode-panel-border)"),
+        ...shorthands.padding("0", "12px"),
+        fontFamily: "var(--vscode-editor-font-family, Consolas, monospace)",
+        fontSize: tokens.fontSizeBase200,
+    },
+    statusLeft: {
         display: "flex",
         alignItems: "center",
-        flexWrap: "wrap",
-        rowGap: "8px",
-        columnGap: "8px",
-        ...shorthands.padding("8px", "12px"),
+        gap: "8px",
+        minWidth: 0,
+        overflowX: "hidden",
+        whiteSpace: "nowrap",
+    },
+    statusRight: {
+        justifySelf: "end",
+        color: "var(--vscode-descriptionForeground)",
+        whiteSpace: "nowrap",
+    },
+    statusAlert: {
+        display: "inline-flex",
+        alignItems: "center",
+        gap: "8px",
+        color: "var(--vscode-editorWarning-foreground)",
+        fontWeight: tokens.fontWeightSemibold,
+        textTransform: "uppercase",
+    },
+    statusDivider: {
+        width: "1px",
+        height: "16px",
+        backgroundColor: "var(--vscode-panel-border)",
+        flexShrink: 0,
+    },
+    statusToken: {
+        minWidth: 0,
+        overflowX: "hidden",
+        textOverflow: "ellipsis",
+    },
+    statusTokenStrong: {
+        color: "var(--vscode-foreground)",
+    },
+    controlRow: {
+        display: "flex",
+        alignItems: "center",
+        gap: "8px",
+        minHeight: "47px",
+        overflowX: "auto",
+        backgroundColor: "var(--vscode-sideBar-background)",
+        ...shorthands.padding("6px", "10px"),
+    },
+    controlGroup: {
+        display: "flex",
+        alignItems: "center",
+        gap: "6px",
+        flexShrink: 0,
+        minWidth: 0,
+    },
+    actionCluster: {
+        display: "flex",
+        alignItems: "center",
+        gap: "2px",
+        flexShrink: 0,
+    },
+    toolbarSeparator: {
+        width: "1px",
+        height: "28px",
+        backgroundColor: "var(--vscode-panel-border)",
+        flexShrink: 0,
+        ...shorthands.margin("0", "4px"),
+    },
+    controlUnit: {
+        display: "flex",
+        alignItems: "center",
+        gap: "6px",
+        minWidth: 0,
+        flexShrink: 0,
+    },
+    controlLabel: {
+        color: "var(--vscode-descriptionForeground)",
+        fontSize: tokens.fontSizeBase100,
+        fontWeight: tokens.fontWeightSemibold,
+        textTransform: "uppercase",
+        whiteSpace: "nowrap",
+    },
+    toolbarDropdown: {
+        height: "32px",
+        maxHeight: "32px",
+        minHeight: "32px !important",
+        alignItems: "center",
+        overflowX: "hidden",
+        whiteSpace: "nowrap",
+        "& .fui-Dropdown__button": {
+            minWidth: 0,
+            overflowX: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            lineHeight: "20px",
+        },
+        "& .fui-Dropdown__expandIcon": {
+            flexShrink: 0,
+        },
+    },
+    profileSelect: {
+        width: "150px",
+    },
+    modelSelect: {
+        width: "clamp(320px, 34vw, 400px)",
+        minWidth: "320px",
+    },
+    schemaSelect: {
+        width: "206px",
+    },
+    textureSelect: {
+        width: "138px",
+    },
+    smallInput: {
+        width: "78px",
     },
     filterRow: {
         display: "flex",
         alignItems: "center",
-        columnGap: "12px",
-        ...shorthands.padding("8px", "12px"),
+        gap: "10px",
+        minHeight: "42px",
+        backgroundColor: "var(--vscode-editor-background)",
+        ...shorthands.padding("6px", "10px"),
         ...shorthands.borderTop("1px", "solid", "var(--vscode-panel-border)"),
-    },
-    field: {
-        minWidth: "170px",
-    },
-    schemaField: {
-        minWidth: "146px",
-    },
-    compactField: {
-        minWidth: "120px",
-    },
-    sliderField: {
-        minWidth: "240px",
-    },
-    checkboxLabel: {
-        display: "flex",
-        alignItems: "center",
     },
     recordDot: {
         display: "inline-block",
@@ -332,16 +434,62 @@ const useStyles = makeStyles({
         height: "8px",
         borderRadius: "50%",
         backgroundColor: "var(--vscode-editorWarning-foreground)",
-        ...shorthands.margin("0", "6px", "0", 0),
+        flexShrink: 0,
+        marginRight: "6px",
     },
     recordDotActive: {
         backgroundColor: "var(--vscode-errorForeground)",
         boxShadow: `0 0 0 2px color-mix(in srgb, var(--vscode-errorForeground) 35%, transparent)`,
     },
-    textureGroup: {
+    recordButton: {
+        height: "30px",
+        minWidth: "116px",
+    },
+    compactButton: {
+        height: "28px",
+        minWidth: "auto",
+    },
+    iconButton: {
+        width: "28px",
+        minWidth: "28px",
+        height: "28px",
+    },
+    pillGroup: {
         display: "flex",
-        alignItems: "flex-end",
-        columnGap: "6px",
+        alignItems: "center",
+        gap: "6px",
+    },
+    pillToggle: {
+        height: "27px",
+        minWidth: "auto",
+        ...shorthands.borderRadius("999px"),
+        ...shorthands.padding("0", "10px"),
+    },
+    pillDot: {
+        width: "7px",
+        height: "7px",
+        borderRadius: "50%",
+        backgroundColor: "var(--vscode-focusBorder)",
+        flexShrink: 0,
+        marginRight: "4px",
+    },
+    eagernessGroup: {
+        display: "flex",
+        alignItems: "center",
+        gap: "8px",
+        width: "244px",
+        flexShrink: 0,
+    },
+    eagernessSlider: {
+        width: "124px",
+        flexShrink: 0,
+    },
+    eagernessValue: {
+        minWidth: "48px",
+        color: "var(--vscode-descriptionForeground)",
+        fontFamily: "var(--vscode-editor-font-family, Consolas, monospace)",
+        fontSize: tokens.fontSizeBase200,
+        whiteSpace: "nowrap",
     },
     schemaPanel: {
         ...shorthands.borderTop("1px", "solid", "var(--vscode-panel-border)"),
@@ -804,60 +952,108 @@ export const InlineCompletionDebugToolbar = ({
         "schemaContextChannel",
         "inline-with-data",
     ) as InlineCompletionSchemaContextChannel;
+    const schemaDisplayValue = selectedSchemaProfile?.label ?? "Balanced (default)";
+    const textureDisplayValue =
+        textureValue === "custom"
+            ? "Custom (active)"
+            : textureValue === "continuation"
+              ? "Continuation"
+              : textureValue === "intent"
+                ? "Intent"
+                : "Default (auto)";
+    const categorySummary =
+        enabledCategories.length > 0
+            ? enabledCategories.map((category) => categoryLabel(category)).join(" + ")
+            : "No categories";
+    const continuationEnabled = enabledCategories.includes("continuation");
+    const intentEnabled = enabledCategories.includes("intent");
 
     return (
         <div className={classes.wrapper}>
-            <div className={classes.row}>
-                <Tooltip
-                    content="Keep recording while the debug panel is closed"
-                    relationship="label">
-                    <ToggleButton
-                        checked={state.recordWhenClosed}
-                        onClick={() => {
-                            setRecordWhenClosed(!state.recordWhenClosed);
-                            blurActiveElementSoon();
-                        }}>
-                        <span
-                            className={`${classes.recordDot} ${
-                                state.recordWhenClosed ? classes.recordDotActive : ""
-                            }`}
-                        />
-                        Record Closed
-                    </ToggleButton>
-                </Tooltip>
+            <div className={classes.statusStrip}>
+                <div className={classes.statusLeft}>
+                    <span className={classes.statusAlert}>
+                        <span className={`${classes.recordDot} ${classes.recordDotActive}`} />
+                        Recording
+                    </span>
+                    <span className={classes.statusDivider} />
+                    <span
+                        className={`${classes.statusToken} ${classes.statusTokenStrong}`}
+                        title={selectedModelDisplayValue}>
+                        {selectedModelDisplayValue}
+                    </span>
+                    <span className={classes.statusToken}>| {selectedProfileDisplayValue}</span>
+                    <span className={classes.statusToken}>| {schemaDisplayValue}</span>
+                    <span className={classes.statusToken}>| {categorySummary}</span>
+                    <span className={classes.statusToken}>| eagerness {debounceValue}ms</span>
+                </div>
+                <div className={classes.statusRight}>
+                    {summary.eventCount} events | avg {summary.averageLatency} ms
+                </div>
+            </div>
 
-                <Tooltip content="Clear the in-memory ring buffer" relationship="label">
-                    <Button
-                        icon={<DeleteRegular />}
-                        onClick={() => {
-                            clearEvents();
-                            blurActiveElementSoon();
-                        }}>
-                        Clear
-                    </Button>
-                </Tooltip>
+            <div className={classes.controlRow}>
+                <div className={classes.controlGroup}>
+                    <Tooltip
+                        content="Keep recording while the debug panel is closed"
+                        relationship="label">
+                        <ToggleButton
+                            className={classes.recordButton}
+                            size="small"
+                            checked={state.recordWhenClosed}
+                            onClick={() => {
+                                setRecordWhenClosed(!state.recordWhenClosed);
+                                blurActiveElementSoon();
+                            }}>
+                            <span
+                                className={`${classes.recordDot} ${
+                                    state.recordWhenClosed ? classes.recordDotActive : ""
+                                }`}
+                            />
+                            Record closed
+                        </ToggleButton>
+                    </Tooltip>
 
-                <Tooltip
-                    content="Keep the newest event visible as rows arrive"
-                    relationship="label">
-                    <ToggleButton
-                        checked={autoScroll}
-                        icon={<ArrowDown16Regular />}
-                        onClick={() => {
-                            onAutoScrollChange(!autoScroll);
-                            blurActiveElementSoon();
-                        }}>
-                        Auto Scroll
-                    </ToggleButton>
-                </Tooltip>
+                    <Tooltip content="Clear the in-memory ring buffer" relationship="label">
+                        <Button
+                            className={classes.compactButton}
+                            size="small"
+                            icon={<DeleteRegular />}
+                            onClick={() => {
+                                clearEvents();
+                                blurActiveElementSoon();
+                            }}>
+                            Clear
+                        </Button>
+                    </Tooltip>
 
-                <ToolbarDivider />
+                    <Tooltip
+                        content="Keep the newest event visible as rows arrive"
+                        relationship="label">
+                        <ToggleButton
+                            className={classes.compactButton}
+                            size="small"
+                            checked={autoScroll}
+                            icon={<ArrowDown16Regular />}
+                            onClick={() => {
+                                onAutoScrollChange(!autoScroll);
+                                blurActiveElementSoon();
+                            }}>
+                            Auto Scroll
+                        </ToggleButton>
+                    </Tooltip>
+                </div>
 
-                <Tooltip
-                    content={selectedProfile?.description ?? "Session-only debug settings"}
-                    relationship="description">
-                    <Field label="Profile" className={classes.field}>
+                <span className={classes.toolbarSeparator} />
+
+                <div className={classes.controlUnit}>
+                    <span className={classes.controlLabel}>Profile</span>
+                    <Tooltip
+                        content={selectedProfile?.description ?? "Session-only debug settings"}
+                        relationship="description">
                         <Dropdown
+                            aria-label="Profile"
+                            className={mergeClasses(classes.toolbarDropdown, classes.profileSelect)}
                             size="small"
                             selectedOptions={[selectedProfileOption]}
                             value={selectedProfileDisplayValue}
@@ -874,41 +1070,14 @@ export const InlineCompletionDebugToolbar = ({
                                 </Option>
                             ))}
                         </Dropdown>
-                    </Field>
-                </Tooltip>
+                    </Tooltip>
+                </div>
 
-                <Tooltip
-                    content={selectedSchemaProfile?.description ?? "Schema context budget"}
-                    relationship="description">
-                    <Field label="Schema" className={classes.schemaField}>
-                        <Dropdown
-                            size="small"
-                            selectedOptions={[selectedSchemaProfileOption]}
-                            value={selectedSchemaProfile?.label ?? "Balanced (default)"}
-                            onOptionSelect={(_, data) =>
-                                handleSchemaProfileChange(data.optionValue)
-                            }>
-                            {schemaProfileOptions.map((profile) => (
-                                <Option key={profile.id} value={profile.id} text={profile.label}>
-                                    {profile.label}
-                                </Option>
-                            ))}
-                        </Dropdown>
-                    </Field>
-                </Tooltip>
-
-                <ToggleButton
-                    checked={schemaPanelOpen}
-                    icon={schemaPanelOpen ? <ChevronDown16Regular /> : <ChevronRight16Regular />}
-                    onClick={() => {
-                        setSchemaPanelOpen((value) => !value);
-                        blurActiveElementSoon();
-                    }}>
-                    Customize schema
-                </ToggleButton>
-
-                <Field label="Model" className={classes.field}>
+                <div className={classes.controlUnit}>
+                    <span className={classes.controlLabel}>Model</span>
                     <Dropdown
+                        aria-label="Model"
+                        className={mergeClasses(classes.toolbarDropdown, classes.modelSelect)}
                         size="small"
                         selectedOptions={[selectedModelOption]}
                         value={selectedModelDisplayValue}
@@ -930,70 +1099,72 @@ export const InlineCompletionDebugToolbar = ({
                             </Option>
                         ))}
                     </Dropdown>
-                </Field>
-
-                <div className={classes.textureGroup}>
-                    <Field label="Texture" className={classes.field}>
-                        <Dropdown
-                            size="small"
-                            selectedOptions={[textureValue]}
-                            value={
-                                textureValue === "custom"
-                                    ? "Custom (active)"
-                                    : textureValue === "continuation"
-                                      ? "Continuation"
-                                      : textureValue === "intent"
-                                        ? "Intent"
-                                        : "Default (auto)"
-                            }
-                            onOptionSelect={(_, data) => handleTextureChange(data.optionValue)}>
-                            <Option value="default">Default (auto)</Option>
-                            <Option value="continuation">Continuation</Option>
-                            <Option value="intent">Intent</Option>
-                            <Option value="custom">Custom</Option>
-                        </Dropdown>
-                    </Field>
-
-                    {state.customPrompt.savedValue ? (
-                        <>
-                            <Tooltip content="Edit the saved custom prompt" relationship="label">
-                                <Button icon={<EditRegular />} onClick={openCustomPromptDialog}>
-                                    Edit
-                                </Button>
-                            </Tooltip>
-                            <Tooltip content="Clear the saved custom prompt" relationship="label">
-                                <Button
-                                    appearance="subtle"
-                                    icon={<DismissRegular />}
-                                    onClick={() => {
-                                        resetCustomPrompt();
-                                        blurActiveElementSoon();
-                                    }}
-                                />
-                            </Tooltip>
-                        </>
-                    ) : null}
                 </div>
 
-                <Checkbox
-                    checked={enabledCategories.includes("continuation")}
-                    label="Continuation"
-                    className={classes.checkboxLabel}
-                    onChange={(_, data) => handleCategoryChange("continuation", !!data.checked)}
-                />
+                <div className={classes.controlUnit}>
+                    <span className={classes.controlLabel}>Schema</span>
+                    <Tooltip
+                        content={selectedSchemaProfile?.description ?? "Schema context budget"}
+                        relationship="description">
+                        <Dropdown
+                            aria-label="Schema"
+                            className={mergeClasses(classes.toolbarDropdown, classes.schemaSelect)}
+                            size="small"
+                            selectedOptions={[selectedSchemaProfileOption]}
+                            value={schemaDisplayValue}
+                            onOptionSelect={(_, data) =>
+                                handleSchemaProfileChange(data.optionValue)
+                            }>
+                            {schemaProfileOptions.map((profile) => (
+                                <Option key={profile.id} value={profile.id} text={profile.label}>
+                                    {profile.label}
+                                </Option>
+                            ))}
+                        </Dropdown>
+                    </Tooltip>
 
-                <Checkbox
-                    checked={enabledCategories.includes("intent")}
-                    label="Intent"
-                    className={classes.checkboxLabel}
-                    onChange={(_, data) => handleCategoryChange("intent", !!data.checked)}
-                />
+                    <ToggleButton
+                        className={classes.compactButton}
+                        size="small"
+                        checked={schemaPanelOpen}
+                        icon={
+                            schemaPanelOpen ? <ChevronDown16Regular /> : <ChevronRight16Regular />
+                        }
+                        onClick={() => {
+                            setSchemaPanelOpen((value) => !value);
+                            blurActiveElementSoon();
+                        }}>
+                        Customize
+                    </ToggleButton>
+                </div>
 
-                <Field
-                    label={`Eagerness ${debounceValue} ms`}
-                    className={classes.sliderField}
-                    hint="Automatic-trigger debounce">
+                <span className={classes.toolbarSeparator} />
+
+                <div className={classes.pillGroup} aria-label="Enabled completion categories">
+                    <ToggleButton
+                        className={classes.pillToggle}
+                        size="small"
+                        checked={continuationEnabled}
+                        onClick={() => handleCategoryChange("continuation", !continuationEnabled)}>
+                        <span className={classes.pillDot} />
+                        Continuation
+                    </ToggleButton>
+
+                    <ToggleButton
+                        className={classes.pillToggle}
+                        size="small"
+                        checked={intentEnabled}
+                        onClick={() => handleCategoryChange("intent", !intentEnabled)}>
+                        <span className={classes.pillDot} />
+                        Intent
+                    </ToggleButton>
+                </div>
+
+                <div className={classes.eagernessGroup}>
+                    <span className={classes.controlLabel}>Eagerness</span>
                     <Slider
+                        aria-label="Automatic trigger debounce"
+                        className={classes.eagernessSlider}
                         min={50}
                         max={1500}
                         step={50}
@@ -1007,10 +1178,14 @@ export const InlineCompletionDebugToolbar = ({
                         onMouseUp={blurActiveElementSoon}
                         onKeyUp={blurActiveElementSoon}
                     />
-                </Field>
+                    <span className={classes.eagernessValue}>{debounceValue}ms</span>
+                </div>
 
-                <Field label="Max Tokens" className={classes.compactField}>
+                <div className={classes.controlUnit}>
+                    <span className={classes.controlLabel}>Max tok</span>
                     <Input
+                        aria-label="Maximum tokens"
+                        className={classes.smallInput}
                         size="small"
                         type="number"
                         value={state.overrides.maxTokens?.toString() ?? ""}
@@ -1021,35 +1196,92 @@ export const InlineCompletionDebugToolbar = ({
                             })
                         }
                     />
-                </Field>
+                </div>
 
-                <Toolbar aria-label="Inline completion debug imports" size="small">
-                    <Button
-                        icon={<ArrowUploadRegular />}
-                        onClick={() => {
-                            importSession();
-                            blurActiveElementSoon();
-                        }}>
-                        Import JSON
-                    </Button>
-                    <Button
-                        icon={<ArrowDownloadRegular />}
-                        onClick={() => {
-                            exportSession();
-                            blurActiveElementSoon();
-                        }}>
-                        Export JSON
-                    </Button>
-                    <Button
-                        appearance="primary"
-                        icon={<SaveRegular />}
-                        onClick={() => {
-                            saveTraceNow();
-                            blurActiveElementSoon();
-                        }}>
-                        Save trace now
-                    </Button>
-                </Toolbar>
+                <div className={classes.controlUnit}>
+                    <span className={classes.controlLabel}>Texture</span>
+                    <Dropdown
+                        aria-label="Texture"
+                        className={mergeClasses(classes.toolbarDropdown, classes.textureSelect)}
+                        size="small"
+                        selectedOptions={[textureValue]}
+                        value={textureDisplayValue}
+                        onOptionSelect={(_, data) => handleTextureChange(data.optionValue)}>
+                        <Option value="default">Default (auto)</Option>
+                        <Option value="continuation">Continuation</Option>
+                        <Option value="intent">Intent</Option>
+                        <Option value="custom">Custom</Option>
+                    </Dropdown>
+
+                    {state.customPrompt.savedValue ? (
+                        <>
+                            <Tooltip content="Edit the saved custom prompt" relationship="label">
+                                <Button
+                                    aria-label="Edit saved custom prompt"
+                                    className={classes.iconButton}
+                                    size="small"
+                                    icon={<EditRegular />}
+                                    onClick={openCustomPromptDialog}
+                                />
+                            </Tooltip>
+                            <Tooltip content="Clear the saved custom prompt" relationship="label">
+                                <Button
+                                    aria-label="Clear saved custom prompt"
+                                    appearance="subtle"
+                                    className={classes.iconButton}
+                                    size="small"
+                                    icon={<DismissRegular />}
+                                    onClick={() => {
+                                        resetCustomPrompt();
+                                        blurActiveElementSoon();
+                                    }}
+                                />
+                            </Tooltip>
+                        </>
+                    ) : null}
+                </div>
+
+                <span className={classes.toolbarSeparator} />
+
+                <div className={classes.actionCluster} aria-label="Inline completion debug imports">
+                    <Tooltip content="Import JSON session" relationship="label">
+                        <Button
+                            aria-label="Import JSON session"
+                            className={classes.iconButton}
+                            size="small"
+                            icon={<ArrowUploadRegular />}
+                            onClick={() => {
+                                importSession();
+                                blurActiveElementSoon();
+                            }}
+                        />
+                    </Tooltip>
+                    <Tooltip content="Export JSON session" relationship="label">
+                        <Button
+                            aria-label="Export JSON session"
+                            className={classes.iconButton}
+                            size="small"
+                            icon={<ArrowDownloadRegular />}
+                            onClick={() => {
+                                exportSession();
+                                blurActiveElementSoon();
+                            }}
+                        />
+                    </Tooltip>
+                    <Tooltip content="Save trace now" relationship="label">
+                        <Button
+                            appearance="primary"
+                            aria-label="Save trace now"
+                            className={classes.iconButton}
+                            size="small"
+                            icon={<SaveRegular />}
+                            onClick={() => {
+                                saveTraceNow();
+                                blurActiveElementSoon();
+                            }}
+                        />
+                    </Tooltip>
+                </div>
             </div>
 
             {schemaPanelOpen ? (
@@ -1401,6 +1633,17 @@ function completionCategoriesEqual(
             (category) => left.includes(category) === right.includes(category),
         )
     );
+}
+
+function categoryLabel(category: InlineCompletionCategory): string {
+    switch (category) {
+        case "continuation":
+            return "Continuation";
+        case "intent":
+            return "Intent";
+        default:
+            return category;
+    }
 }
 
 function getSchemaBudgetProfileId(
