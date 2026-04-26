@@ -23,6 +23,7 @@ import {
     ArrowDownloadRegular,
     ArrowSyncRegular,
     ChevronDown16Regular,
+    ChevronLeft16Regular,
     ChevronRight16Regular,
     DatabaseLinkRegular,
     FolderOpenRegular,
@@ -205,24 +206,49 @@ const useStyles = makeStyles({
         minHeight: 0,
     },
     workspace: {
-        display: "grid",
-        gridTemplateColumns: "236px minmax(480px, 1fr) minmax(260px, 34%)",
+        display: "flex",
         height: "100%",
         minHeight: 0,
     },
-    filters: {
+    workspacePanels: {
+        ...shorthands.flex(1),
+        minWidth: 0,
         minHeight: 0,
+    },
+    collapsedFilters: {
+        width: "34px",
+        flexShrink: 0,
+        display: "flex",
+        justifyContent: "center",
+        alignItems: "flex-start",
+        backgroundColor: "var(--vscode-sideBar-background)",
+        ...shorthands.padding("4px", "0"),
+        ...shorthands.borderRight("1px", "solid", "var(--vscode-panel-border)"),
+    },
+    collapsedFiltersButton: {
+        minWidth: "28px",
+        width: "28px",
+    },
+    filters: {
+        height: "100%",
+        minHeight: 0,
+        minWidth: 0,
         overflowY: "auto",
         backgroundColor: "var(--vscode-sideBar-background)",
-        ...shorthands.borderRight("1px", "solid", "var(--vscode-panel-border)"),
     },
     filterHeader: {
         display: "flex",
         justifyContent: "space-between",
         alignItems: "center",
+        gap: "8px",
         minHeight: "36px",
         ...shorthands.padding("0", "10px"),
         ...shorthands.borderBottom("1px", "solid", "var(--vscode-panel-border)"),
+    },
+    filterHeaderActions: {
+        display: "flex",
+        gap: "2px",
+        alignItems: "center",
     },
     facet: {
         ...shorthands.padding("10px"),
@@ -264,18 +290,20 @@ const useStyles = makeStyles({
     },
     numericFilters: {
         display: "grid",
-        gridTemplateColumns: "1fr 1fr",
+        gridTemplateColumns: "1fr",
         gap: "8px",
     },
     main: {
+        height: "100%",
         minHeight: 0,
+        minWidth: 0,
         overflowY: "auto",
-        ...shorthands.borderRight("1px", "solid", "var(--vscode-panel-border)"),
     },
     controls: {
         display: "flex",
         alignItems: "center",
         justifyContent: "space-between",
+        flexWrap: "wrap",
         gap: "10px",
         minHeight: "40px",
         ...shorthands.padding("5px", "10px"),
@@ -284,6 +312,7 @@ const useStyles = makeStyles({
     controlGroup: {
         display: "flex",
         alignItems: "center",
+        flexWrap: "wrap",
         gap: "8px",
     },
     pivotMeta: {
@@ -295,6 +324,21 @@ const useStyles = makeStyles({
         borderCollapse: "collapse",
         tableLayout: "fixed",
         fontSize: tokens.fontSizeBase200,
+    },
+    pivotNameColumn: {
+        width: "22%",
+    },
+    pivotCountColumn: {
+        width: "6%",
+    },
+    pivotSampleColumn: {
+        width: "8%",
+    },
+    pivotMetricColumn: {
+        width: "7.5%",
+    },
+    pivotSchemaColumn: {
+        width: "11%",
     },
     pivotHeaderCell: {
         position: "sticky",
@@ -321,7 +365,8 @@ const useStyles = makeStyles({
     pivotNameCell: {
         textAlign: "left",
         fontFamily: "var(--vscode-editor-font-family, Consolas, monospace)",
-        overflowWrap: "anywhere",
+        overflowWrap: "break-word",
+        wordBreak: "normal",
     },
     pivotRow: {
         cursor: "pointer",
@@ -347,7 +392,9 @@ const useStyles = makeStyles({
         height: "5px",
     },
     sideCharts: {
+        height: "100%",
         minHeight: 0,
+        minWidth: 0,
         overflowY: "auto",
         backgroundColor: "var(--vscode-sideBar-background)",
     },
@@ -409,6 +456,19 @@ const useStyles = makeStyles({
         height: "2px",
         backgroundColor: "var(--vscode-focusBorder)",
     },
+    horizontalResizeHandle: {
+        width: "2px",
+        flexShrink: 0,
+        backgroundColor: "var(--vscode-panel-border)",
+        cursor: "col-resize",
+        ":hover": {
+            backgroundColor: "var(--vscode-focusBorder)",
+        },
+        ":focus-visible": {
+            backgroundColor: "var(--vscode-focusBorder)",
+            outlineStyle: "none",
+        },
+    },
     drilldown: {
         display: "grid",
         gridTemplateColumns: "42% minmax(0, 1fr)",
@@ -454,6 +514,7 @@ export function SessionsTab({ active }: { active: boolean }) {
     >("none");
     const [selectedPivotKey, setSelectedPivotKey] = useState<string | undefined>();
     const [selectedEventKey, setSelectedEventKey] = useState<string | undefined>();
+    const [filtersCollapsed, setFiltersCollapsed] = useState(false);
     const [gridResizeToken, setGridResizeToken] = useState(0);
 
     useEffect(() => {
@@ -608,62 +669,101 @@ export function SessionsTab({ active }: { active: boolean }) {
                         onLayout={() => setGridResizeToken((value) => value + 1)}>
                         <Panel defaultSize={selectedPivot ? 62 : 100} minSize={34}>
                             <div className={classes.workspace}>
-                                <FilterRail
-                                    events={events}
-                                    filters={filters}
-                                    onFacetChange={updateFacet}
-                                    onClear={() => setFilters({})}
-                                    onLatencyBoundChange={setLatencyBound}
-                                />
-                                <div className={classes.main}>
-                                    <div className={classes.controls}>
-                                        <div className={classes.controlGroup}>
-                                            <Text>Group by</Text>
-                                            <DimensionDropdown
-                                                value={primaryDimension}
-                                                onChange={setPrimaryDimension}
-                                            />
-                                            <Text>then by</Text>
-                                            <SecondaryDimensionDropdown
-                                                value={secondaryDimension}
-                                                onChange={setSecondaryDimension}
-                                            />
-                                        </div>
-                                        <div className={classes.controlGroup}>
-                                            <Text className={classes.pivotMeta}>
-                                                {filteredEvents.length.toLocaleString()} events
-                                            </Text>
+                                {filtersCollapsed ? (
+                                    <div className={classes.collapsedFilters}>
+                                        <FluentTooltip content="Show filters" relationship="label">
                                             <Button
-                                                icon={<ArrowDownloadRegular />}
-                                                onClick={() =>
-                                                    exportPivotCsv(flatPivotRows, primaryDimension)
-                                                }>
-                                                Export CSV
-                                            </Button>
-                                        </div>
+                                                appearance="subtle"
+                                                size="small"
+                                                className={classes.collapsedFiltersButton}
+                                                icon={<ChevronRight16Regular />}
+                                                onClick={() => setFiltersCollapsed(false)}
+                                            />
+                                        </FluentTooltip>
                                     </div>
-                                    {flatPivotRows.length > 0 ? (
-                                        <PivotTable
-                                            rows={flatPivotRows}
-                                            selectedKey={selectedPivotKey}
-                                            onSelect={(row) => {
-                                                setSelectedPivotKey(row.key);
-                                                const firstEvent = row.events[0];
-                                                setSelectedEventKey(
-                                                    firstEvent
-                                                        ? getSessionEventKey(firstEvent, 0)
-                                                        : undefined,
-                                                );
-                                            }}
-                                            primaryDimension={primaryDimension}
-                                        />
-                                    ) : (
-                                        <div className={classes.empty}>
-                                            No loaded events match the current dataset and filters.
+                                ) : null}
+                                <PanelGroup
+                                    key={filtersCollapsed ? "filters-collapsed" : "filters-open"}
+                                    direction="horizontal"
+                                    className={classes.workspacePanels}
+                                    onLayout={() => setGridResizeToken((value) => value + 1)}>
+                                    {!filtersCollapsed ? (
+                                        <>
+                                            <Panel defaultSize={20} minSize={14} maxSize={34}>
+                                                <FilterRail
+                                                    events={events}
+                                                    filters={filters}
+                                                    onFacetChange={updateFacet}
+                                                    onClear={() => setFilters({})}
+                                                    onCollapse={() => setFiltersCollapsed(true)}
+                                                    onLatencyBoundChange={setLatencyBound}
+                                                />
+                                            </Panel>
+                                            <PanelResizeHandle
+                                                className={classes.horizontalResizeHandle}
+                                            />
+                                        </>
+                                    ) : null}
+                                    <Panel defaultSize={filtersCollapsed ? 64 : 48} minSize={34}>
+                                        <div className={classes.main}>
+                                            <div className={classes.controls}>
+                                                <div className={classes.controlGroup}>
+                                                    <Text>Group by</Text>
+                                                    <DimensionDropdown
+                                                        value={primaryDimension}
+                                                        onChange={setPrimaryDimension}
+                                                    />
+                                                    <Text>then by</Text>
+                                                    <SecondaryDimensionDropdown
+                                                        value={secondaryDimension}
+                                                        onChange={setSecondaryDimension}
+                                                    />
+                                                </div>
+                                                <div className={classes.controlGroup}>
+                                                    <Text className={classes.pivotMeta}>
+                                                        {filteredEvents.length.toLocaleString()}{" "}
+                                                        events
+                                                    </Text>
+                                                    <Button
+                                                        icon={<ArrowDownloadRegular />}
+                                                        onClick={() =>
+                                                            exportPivotCsv(
+                                                                flatPivotRows,
+                                                                primaryDimension,
+                                                            )
+                                                        }>
+                                                        Export CSV
+                                                    </Button>
+                                                </div>
+                                            </div>
+                                            {flatPivotRows.length > 0 ? (
+                                                <PivotTable
+                                                    rows={flatPivotRows}
+                                                    selectedKey={selectedPivotKey}
+                                                    onSelect={(row) => {
+                                                        setSelectedPivotKey(row.key);
+                                                        const firstEvent = row.events[0];
+                                                        setSelectedEventKey(
+                                                            firstEvent
+                                                                ? getSessionEventKey(firstEvent, 0)
+                                                                : undefined,
+                                                        );
+                                                    }}
+                                                    primaryDimension={primaryDimension}
+                                                />
+                                            ) : (
+                                                <div className={classes.empty}>
+                                                    No loaded events match the current dataset and
+                                                    filters.
+                                                </div>
+                                            )}
                                         </div>
-                                    )}
-                                </div>
-                                <ChartsPanel rows={flatPivotRows} events={filteredEvents} />
+                                    </Panel>
+                                    <PanelResizeHandle className={classes.horizontalResizeHandle} />
+                                    <Panel defaultSize={filtersCollapsed ? 36 : 32} minSize={22}>
+                                        <ChartsPanel rows={flatPivotRows} events={filteredEvents} />
+                                    </Panel>
+                                </PanelGroup>
                             </div>
                         </Panel>
                         {selectedPivot ? (
@@ -925,6 +1025,7 @@ function FilterRail({
     filters,
     onFacetChange,
     onClear,
+    onCollapse,
     onLatencyBoundChange,
 }: {
     events: InlineCompletionDebugEvent[];
@@ -935,6 +1036,7 @@ function FilterRail({
         checked: boolean,
     ) => void;
     onClear: () => void;
+    onCollapse: () => void;
     onLatencyBoundChange: (key: "min" | "max", value: string) => void;
 }) {
     const classes = useStyles();
@@ -942,9 +1044,19 @@ function FilterRail({
         <div className={classes.filters}>
             <div className={classes.filterHeader}>
                 <Text className={classes.statLabel}>Filters</Text>
-                <Button appearance="subtle" size="small" onClick={onClear}>
-                    Clear
-                </Button>
+                <div className={classes.filterHeaderActions}>
+                    <Button appearance="subtle" size="small" onClick={onClear}>
+                        Clear
+                    </Button>
+                    <FluentTooltip content="Collapse filters" relationship="label">
+                        <Button
+                            appearance="subtle"
+                            size="small"
+                            icon={<ChevronLeft16Regular />}
+                            onClick={onCollapse}
+                        />
+                    </FluentTooltip>
+                </div>
             </div>
             {dimensions.slice(0, 9).map((dimension) => (
                 <Facet
@@ -1093,6 +1205,15 @@ function PivotTable({
     const primaryLabel = dimensions.find((dimension) => dimension.key === primaryDimension)?.label;
     return (
         <table className={classes.pivotTable}>
+            <colgroup>
+                <col className={classes.pivotNameColumn} />
+                <col className={classes.pivotCountColumn} />
+                <col className={classes.pivotSampleColumn} />
+                {Array.from({ length: 7 }).map((_, index) => (
+                    <col key={index} className={classes.pivotMetricColumn} />
+                ))}
+                <col className={classes.pivotSchemaColumn} />
+            </colgroup>
             <thead>
                 <tr>
                     <th className={mergeClasses(classes.pivotHeaderCell, classes.pivotHeaderName)}>
