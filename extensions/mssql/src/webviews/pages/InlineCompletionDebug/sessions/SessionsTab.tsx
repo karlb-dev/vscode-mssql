@@ -470,16 +470,15 @@ const useStyles = makeStyles({
         },
     },
     drilldown: {
-        display: "grid",
-        gridTemplateColumns: "42% minmax(0, 1fr)",
         height: "100%",
         minHeight: 0,
     },
     drillGrid: {
+        height: "100%",
         minHeight: 0,
-        ...shorthands.borderRight("1px", "solid", "var(--vscode-panel-border)"),
     },
     drillDetail: {
+        height: "100%",
         minHeight: 0,
     },
     empty: {
@@ -770,26 +769,36 @@ export function SessionsTab({ active }: { active: boolean }) {
                             <>
                                 <PanelResizeHandle className={classes.resizeHandle} />
                                 <Panel defaultSize={38} minSize={22}>
-                                    <div className={classes.drilldown}>
-                                        <div className={classes.drillGrid}>
-                                            <InlineCompletionDebugEventGrid
-                                                events={drilldownEvents}
-                                                onSelectEvent={setSelectedEventKey}
-                                                autoScroll={false}
-                                                resizeToken={gridResizeToken}
-                                                onCopyEventPayload={copySessionEventPayload}
-                                                onReplayEvent={replaySessionEvent}
-                                                showReplay={true}
-                                                getEventKey={getSessionEventKey}
-                                            />
-                                        </div>
-                                        <div className={classes.drillDetail}>
-                                            <InlineCompletionDebugDetailPane
-                                                event={selectedEvent}
-                                                onCopyEventPayload={copySessionEventPayload}
-                                            />
-                                        </div>
-                                    </div>
+                                    <PanelGroup
+                                        direction="horizontal"
+                                        className={classes.drilldown}
+                                        onLayout={() => setGridResizeToken((value) => value + 1)}>
+                                        <Panel defaultSize={42} minSize={24}>
+                                            <div className={classes.drillGrid}>
+                                                <InlineCompletionDebugEventGrid
+                                                    events={drilldownEvents}
+                                                    onSelectEvent={setSelectedEventKey}
+                                                    autoScroll={false}
+                                                    resizeToken={gridResizeToken}
+                                                    onCopyEventPayload={copySessionEventPayload}
+                                                    onReplayEvent={replaySessionEvent}
+                                                    showReplay={true}
+                                                    getEventKey={getSessionEventKey}
+                                                />
+                                            </div>
+                                        </Panel>
+                                        <PanelResizeHandle
+                                            className={classes.horizontalResizeHandle}
+                                        />
+                                        <Panel defaultSize={58} minSize={28}>
+                                            <div className={classes.drillDetail}>
+                                                <InlineCompletionDebugDetailPane
+                                                    event={selectedEvent}
+                                                    onCopyEventPayload={copySessionEventPayload}
+                                                />
+                                            </div>
+                                        </Panel>
+                                    </PanelGroup>
                                 </Panel>
                             </>
                         ) : null}

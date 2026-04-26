@@ -71,6 +71,7 @@ suite("Inline completion trace loader", () => {
                 overrides: {
                     profileId: "balanced",
                     modelSelector: null,
+                    continuationModelSelector: null,
                     useSchemaContext: true,
                     debounceMs: null,
                     maxTokens: null,

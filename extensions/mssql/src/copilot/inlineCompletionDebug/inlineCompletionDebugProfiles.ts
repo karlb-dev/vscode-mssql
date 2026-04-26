@@ -164,6 +164,7 @@ export function createInlineCompletionDebugPresetOverrides(
     return {
         profileId,
         modelSelector: null,
+        continuationModelSelector: null,
         forceIntentMode: null,
         enabledCategories: null,
         debounceMs: null,

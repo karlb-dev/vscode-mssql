@@ -101,6 +101,7 @@ suite("SqlInlineCompletionProvider Tests", () => {
         inlineCompletionDebugStore.replaceOverrides({
             profileId: null,
             modelSelector: null,
+            continuationModelSelector: null,
             useSchemaContext: null,
             debounceMs: null,
             maxTokens: null,
@@ -667,6 +668,61 @@ ORDER BY qs.total_worker_time DESC;`,
 
         expect(items).to.have.lengthOf(1);
         expect(sendRequestStub).to.have.been.calledOnce;
+    });
+
+    test("uses the continuation model override only for continuation requests", async () => {
+        const defaultSendRequest = sandbox.stub().resolves(createChatResponse("SELECT 1;"));
+        const continuationSendRequest = sandbox
+            .stub()
+            .resolves(createChatResponse("FROM dbo.Customers"));
+        (vscode.lm.selectChatModels as sinon.SinonStub).callsFake(async ({ vendor }) =>
+            vendor === "openai-api"
+                ? [
+                      {
+                          id: "gpt-5.5",
+                          name: "GPT-5.5",
+                          family: "gpt-5.5",
+                          vendor: "openai-api",
+                          sendRequest: defaultSendRequest,
+                          countTokens: countTokensStub,
+                      },
+                      {
+                          id: "gpt-5.4-mini",
+                          name: "GPT-5.4 Mini",
+                          family: "gpt-5.4-mini",
+                          vendor: "openai-api",
+                          sendRequest: continuationSendRequest,
+                          countTokens: countTokensStub,
+                      },
+                  ]
+                : [],
+        );
+        inlineCompletionDebugStore.updateOverrides({
+            modelSelector: "openai-api/gpt-5.5",
+            continuationModelSelector: "openai-api/gpt-5.4-mini",
+        });
+        schemaContextService.getSchemaContext.resolves(undefined);
+
+        await provider.provideInlineCompletionItems(
+            createTestDocument("SELECT *", "file:///query.sql"),
+            new vscode.Position(0, "SELECT *".length),
+            {
+                triggerKind: vscode.InlineCompletionTriggerKind.Invoke,
+            } as vscode.InlineCompletionContext,
+            { isCancellationRequested: false } as vscode.CancellationToken,
+        );
+
+        await provider.provideInlineCompletionItems(
+            createTestDocument("-- Write a query to show one row\n", "file:///query.sql"),
+            new vscode.Position(1, 0),
+            {
+                triggerKind: vscode.InlineCompletionTriggerKind.Invoke,
+            } as vscode.InlineCompletionContext,
+            { isCancellationRequested: false } as vscode.CancellationToken,
+        );
+
+        expect(continuationSendRequest).to.have.been.calledOnce;
+        expect(defaultSendRequest).to.have.been.calledOnce;
     });
 
     test("returns no completions when the cancellation token fires during the debounce wait", async () => {

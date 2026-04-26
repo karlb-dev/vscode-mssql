@@ -318,6 +318,8 @@ export const configCopilotInlineCompletionsSchemaContext =
 export const configCopilotInlineCompletionsProfile = "mssql.copilot.inlineCompletions.profile";
 export const configCopilotInlineCompletionsModelFamily =
     "mssql.copilot.inlineCompletions.modelFamily";
+export const configCopilotInlineCompletionsContinuationModelFamily =
+    "mssql.copilot.inlineCompletions.continuationModelFamily";
 export const configCopilotInlineCompletionsModelVendors =
     "mssql.copilot.inlineCompletions.modelVendors";
 export const configCopilotInlineCompletionsEnabledCategories =

@@ -2568,6 +2568,12 @@
                     "description": "%mssql.copilot.inlineCompletions.modelFamily.description%",
                     "scope": "window"
                 },
+                "mssql.copilot.inlineCompletions.continuationModelFamily": {
+                    "type": "string",
+                    "default": "",
+                    "description": "%mssql.copilot.inlineCompletions.continuationModelFamily.description%",
+                    "scope": "window"
+                },
                 "mssql.copilot.inlineCompletions.modelVendors": {
                     "type": "array",
                     "default": [

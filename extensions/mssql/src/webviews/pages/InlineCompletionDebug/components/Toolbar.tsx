@@ -410,6 +410,10 @@ const useStyles = makeStyles({
         width: "clamp(320px, 34vw, 400px)",
         minWidth: "320px",
     },
+    continuationModelSelect: {
+        width: "clamp(260px, 28vw, 360px)",
+        minWidth: "260px",
+    },
     schemaSelect: {
         width: "206px",
     },
@@ -692,6 +696,15 @@ export const InlineCompletionDebugToolbar = ({
             ?.label ??
         state.overrides.modelSelector ??
         defaultModelLabel;
+    const defaultContinuationModelLabel = getDefaultContinuationModelLabel(state);
+    const selectedContinuationModelOption =
+        state.overrides.continuationModelSelector ?? "__default__";
+    const selectedContinuationModelDisplayValue =
+        state.availableModels.find(
+            (model) => model.selector === state.overrides.continuationModelSelector,
+        )?.label ??
+        state.overrides.continuationModelSelector ??
+        defaultContinuationModelLabel;
     const enabledCategories = state.overrides.enabledCategories ?? state.defaults.enabledCategories;
     const debounceValue = state.overrides.debounceMs ?? state.defaults.debounceMs;
     const customPromptIsActive = !!state.overrides.customSystemPrompt;
@@ -983,6 +996,15 @@ export const InlineCompletionDebugToolbar = ({
                         {selectedModelDisplayValue}
                     </span>
                     <span className={classes.statusToken}>| {selectedProfileDisplayValue}</span>
+                    {continuationEnabled &&
+                    (state.overrides.continuationModelSelector ||
+                        state.defaults.configuredContinuationModelSelector) ? (
+                        <span
+                            className={classes.statusToken}
+                            title={selectedContinuationModelDisplayValue}>
+                            | continuation {selectedContinuationModelDisplayValue}
+                        </span>
+                    ) : null}
                     <span className={classes.statusToken}>| {schemaDisplayValue}</span>
                     <span className={classes.statusToken}>| {categorySummary}</span>
                     <span className={classes.statusToken}>| eagerness {debounceValue}ms</span>
@@ -1100,6 +1122,42 @@ export const InlineCompletionDebugToolbar = ({
                         ))}
                     </Dropdown>
                 </div>
+
+                {continuationEnabled ? (
+                    <div className={classes.controlUnit}>
+                        <span className={classes.controlLabel}>Continuation Model</span>
+                        <Dropdown
+                            aria-label="Continuation Model"
+                            className={mergeClasses(
+                                classes.toolbarDropdown,
+                                classes.continuationModelSelect,
+                            )}
+                            size="small"
+                            selectedOptions={[selectedContinuationModelOption]}
+                            value={selectedContinuationModelDisplayValue}
+                            onOptionSelect={(_, data) => {
+                                updateOverrides({
+                                    continuationModelSelector:
+                                        data.optionValue === "__default__"
+                                            ? null
+                                            : (data.optionValue ?? null),
+                                });
+                                blurActiveElementSoon();
+                            }}>
+                            <Option value="__default__" text={defaultContinuationModelLabel}>
+                                {defaultContinuationModelLabel}
+                            </Option>
+                            {state.availableModels.map((model) => (
+                                <Option
+                                    key={model.selector}
+                                    value={model.selector}
+                                    text={model.label}>
+                                    {model.label}
+                                </Option>
+                            ))}
+                        </Dropdown>
+                    </div>
+                ) : null}
 
                 <div className={classes.controlUnit}>
                     <span className={classes.controlLabel}>Schema</span>
@@ -1621,6 +1679,16 @@ function getDefaultModelLabel(state: InlineCompletionDebugWebviewState): string 
     const fallback =
         state.defaults.effectiveModelSelector ?? state.defaults.configuredModelSelector;
     return fallback ? `${fallback} (${suffix})` : `(${suffix})`;
+}
+
+function getDefaultContinuationModelLabel(state: InlineCompletionDebugWebviewState): string {
+    if (!state.defaults.configuredContinuationModelSelector) {
+        return "Use default model";
+    }
+
+    return state.defaults.effectiveContinuationModelLabel
+        ? `${state.defaults.effectiveContinuationModelLabel} (configured continuation)`
+        : `${state.defaults.configuredContinuationModelSelector} (configured continuation)`;
 }
 
 function completionCategoriesEqual(

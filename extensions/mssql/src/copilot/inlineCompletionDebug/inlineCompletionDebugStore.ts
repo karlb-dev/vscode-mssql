@@ -25,6 +25,7 @@ const TRUNCATION_SUFFIX_SUFFIX = " more chars]";
 const defaultOverrides: InlineCompletionDebugOverrides = {
     profileId: null,
     modelSelector: null,
+    continuationModelSelector: null,
     useSchemaContext: null,
     debounceMs: null,
     maxTokens: null,
@@ -241,6 +242,7 @@ function normalizeOverrides(
     return {
         profileId: normalizeNullableProfileId(overrides.profileId),
         modelSelector: normalizeNullableString(overrides.modelSelector),
+        continuationModelSelector: normalizeNullableString(overrides.continuationModelSelector),
         useSchemaContext: normalizeNullableBoolean(overrides.useSchemaContext),
         debounceMs: normalizeNullableNumber(overrides.debounceMs),
         maxTokens: normalizeNullableNumber(overrides.maxTokens),
@@ -262,6 +264,11 @@ function normalizePartialOverrides(
     }
     if (Object.prototype.hasOwnProperty.call(overrides, "modelSelector")) {
         normalized.modelSelector = normalizeNullableString(overrides.modelSelector);
+    }
+    if (Object.prototype.hasOwnProperty.call(overrides, "continuationModelSelector")) {
+        normalized.continuationModelSelector = normalizeNullableString(
+            overrides.continuationModelSelector,
+        );
     }
     if (Object.prototype.hasOwnProperty.call(overrides, "useSchemaContext")) {
         normalized.useSchemaContext = normalizeNullableBoolean(overrides.useSchemaContext);

@@ -53,6 +53,7 @@ export interface InlineCompletionDebugPromptMessage {
 export interface InlineCompletionDebugOverridesApplied {
     profileId?: InlineCompletionDebugProfileId;
     modelSelector?: string;
+    continuationModelSelector?: string;
     useSchemaContext?: boolean;
     debounceMs?: number;
     maxTokens?: number;
@@ -143,6 +144,9 @@ export interface InlineCompletionDebugOverrides {
     // A model selector is `<vendor>/<id>`, but a bare family string is also
     // accepted for backwards compatibility with `mssql.copilot.inlineCompletions.modelFamily`.
     modelSelector: string | null;
+    // Optional continuation-only model selector. When unset, continuation uses modelSelector
+    // or the active profile/configured default model.
+    continuationModelSelector: string | null;
     useSchemaContext: boolean | null;
     debounceMs: number | null;
     maxTokens: number | null;
@@ -166,10 +170,13 @@ export interface InlineCompletionDebugModelOption {
 
 export interface InlineCompletionDebugDefaults {
     configuredModelSelector?: string;
+    configuredContinuationModelSelector?: string;
     configuredProfileId?: InlineCompletionDebugProfileId;
     effectiveProfileId?: InlineCompletionDebugProfileId;
     effectiveModelSelector?: string;
     effectiveModelLabel?: string;
+    effectiveContinuationModelSelector?: string;
+    effectiveContinuationModelLabel?: string;
     useSchemaContext: boolean;
     debounceMs: number;
     continuationMaxTokens: number;

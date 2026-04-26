@@ -31,9 +31,25 @@ const useStyles = makeStyles({
         display: "flex",
         alignItems: "center",
         justifyContent: "space-between",
+        gap: "8px",
         ...shorthands.padding("0", "12px"),
         ...shorthands.borderBottom("1px", "solid", "var(--vscode-panel-border)"),
         minHeight: "42px",
+    },
+    tabScroller: {
+        flexGrow: 1,
+        flexShrink: 1,
+        minWidth: 0,
+        overflowX: "auto",
+        overflowY: "hidden",
+    },
+    tabList: {
+        width: "max-content",
+        minWidth: "max-content",
+        "& [role='tab']": {
+            flexShrink: 0,
+            whiteSpace: "nowrap",
+        },
     },
     content: {
         ...shorthands.flex(1),
@@ -140,18 +156,21 @@ export const InlineCompletionDebugDetailPane = ({
     return (
         <div className={classes.root}>
             <div className={classes.tabHeader}>
-                <TabList
-                    selectedValue={activeTab}
-                    onTabSelect={(_, data) => setActiveTab(data.value as DetailTab)}>
-                    <Tab value="summary">Summary</Tab>
-                    <Tab value="system">System Prompt</Tab>
-                    <Tab value="user">User Prompt</Tab>
-                    <Tab value="raw">Raw Response</Tab>
-                    <Tab value="sanitized">Sanitized</Tab>
-                    <Tab value="schema">Schema Context</Tab>
-                    <Tab value="locals">Locals Dump</Tab>
-                    <Tab value="telemetry">Telemetry</Tab>
-                </TabList>
+                <div className={classes.tabScroller}>
+                    <TabList
+                        className={classes.tabList}
+                        selectedValue={activeTab}
+                        onTabSelect={(_, data) => setActiveTab(data.value as DetailTab)}>
+                        <Tab value="summary">Summary</Tab>
+                        <Tab value="system">System Prompt</Tab>
+                        <Tab value="user">User Prompt</Tab>
+                        <Tab value="raw">Raw Response</Tab>
+                        <Tab value="sanitized">Sanitized</Tab>
+                        <Tab value="schema">Schema Context</Tab>
+                        <Tab value="locals">Locals Dump</Tab>
+                        <Tab value="telemetry">Telemetry</Tab>
+                    </TabList>
+                </div>
 
                 {activeTab === "system" ? (
                     <Button

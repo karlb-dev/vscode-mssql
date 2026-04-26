@@ -60,6 +60,7 @@ import {
 } from "./inlineCompletionDebugProfiles";
 import { inlineCompletionDebugStore } from "./inlineCompletionDebugStore";
 import {
+    InlineCompletionCategory,
     InlineCompletionDebugEvent,
     InlineCompletionDebugModelOption,
     InlineCompletionDebugOverrides,
@@ -186,6 +187,9 @@ export class InlineCompletionDebugController extends WebviewPanelController<
                 if (
                     e.affectsConfiguration(Constants.configCopilotInlineCompletionsProfile) ||
                     e.affectsConfiguration(Constants.configCopilotInlineCompletionsModelFamily) ||
+                    e.affectsConfiguration(
+                        Constants.configCopilotInlineCompletionsContinuationModelFamily,
+                    ) ||
                     e.affectsConfiguration(Constants.configCopilotInlineCompletionsModelVendors)
                 ) {
                     this._effectiveDefaultModelOption = pickDefaultModelOption(
@@ -516,6 +520,7 @@ export class InlineCompletionDebugController extends WebviewPanelController<
 
         return (
             Object.prototype.hasOwnProperty.call(update, "modelSelector") ||
+            Object.prototype.hasOwnProperty.call(update, "continuationModelSelector") ||
             Object.prototype.hasOwnProperty.call(update, "forceIntentMode") ||
             Object.prototype.hasOwnProperty.call(update, "enabledCategories") ||
             Object.prototype.hasOwnProperty.call(update, "debounceMs") ||
@@ -544,6 +549,7 @@ export class InlineCompletionDebugController extends WebviewPanelController<
         return {
             profileId: inlineCompletionDebugCustomProfileId,
             modelSelector: current.modelSelector ?? modelOption?.selector ?? null,
+            continuationModelSelector: current.continuationModelSelector,
             forceIntentMode: current.forceIntentMode ?? profile.forceIntentMode,
             enabledCategories: current.enabledCategories ?? [...profile.enabledCategories],
             debounceMs: current.debounceMs ?? profile.debounceMs,
@@ -906,14 +912,28 @@ export class InlineCompletionDebugController extends WebviewPanelController<
     private async replaySourceEvent(sourceEvent: InlineCompletionDebugEvent): Promise<void> {
         const overrides = inlineCompletionDebugStore.getOverrides();
         const profile = getInlineCompletionDebugPresetProfile(overrides.profileId);
+        const linePrefix = asString(sourceEvent.locals.linePrefix);
+        const lineSuffix = asString(sourceEvent.locals.lineSuffix);
+        const recentPrefix = asString(sourceEvent.locals.recentPrefix);
+        const statementPrefix = asString(sourceEvent.locals.statementPrefix);
+        const suffix = asString(sourceEvent.locals.suffix);
+        const intentMode =
+            overrides.forceIntentMode ?? profile?.forceIntentMode ?? sourceEvent.intentMode;
+        const completionCategory = getInlineCompletionCategory(intentMode);
         const selectedModel = await this.selectReplayModel(
-            overrides.modelSelector,
+            getModelSelectorForCompletionCategory(
+                overrides,
+                completionCategory,
+                getConfiguredContinuationModelSelector(),
+            ),
             profile?.modelPreference,
         );
         if (!selectedModel) {
             inlineCompletionDebugStore.addEvent({
                 ...cloneBaseEvent(sourceEvent),
                 timestamp: Date.now(),
+                completionCategory,
+                intentMode,
                 result: "noModel",
                 latencyMs: 0,
                 modelFamily: undefined,
@@ -931,6 +951,8 @@ export class InlineCompletionDebugController extends WebviewPanelController<
                 schemaContextFormatted: sourceEvent.schemaContextFormatted,
                 locals: {
                     ...sourceEvent.locals,
+                    completionCategory,
+                    intentMode,
                     replaySourceEventId: sourceEvent.id,
                 },
             });
@@ -943,6 +965,8 @@ export class InlineCompletionDebugController extends WebviewPanelController<
             inlineCompletionDebugStore.addEvent({
                 ...cloneBaseEvent(sourceEvent),
                 timestamp: Date.now(),
+                completionCategory,
+                intentMode,
                 result: "noPermission",
                 latencyMs: 0,
                 modelFamily: selectedModel.family,
@@ -960,20 +984,14 @@ export class InlineCompletionDebugController extends WebviewPanelController<
                 schemaContextFormatted: sourceEvent.schemaContextFormatted,
                 locals: {
                     ...sourceEvent.locals,
+                    completionCategory,
+                    intentMode,
                     replaySourceEventId: sourceEvent.id,
                 },
             });
             return;
         }
 
-        const linePrefix = asString(sourceEvent.locals.linePrefix);
-        const lineSuffix = asString(sourceEvent.locals.lineSuffix);
-        const recentPrefix = asString(sourceEvent.locals.recentPrefix);
-        const statementPrefix = asString(sourceEvent.locals.statementPrefix);
-        const suffix = asString(sourceEvent.locals.suffix);
-        const intentMode =
-            overrides.forceIntentMode ?? profile?.forceIntentMode ?? sourceEvent.intentMode;
-        const completionCategory = getInlineCompletionCategory(intentMode);
         const useSchemaContext = overrides.useSchemaContext ?? getConfiguredUseSchemaContext();
         const schemaContextSettings = getSqlInlineCompletionSchemaContextRuntimeSettings(
             selectedModel.maxInputTokens,
@@ -1254,7 +1272,7 @@ export class InlineCompletionDebugController extends WebviewPanelController<
     }
 
     private async selectReplayModel(
-        modelSelectorOverride: string | null,
+        modelSelectorOverride: string | undefined,
         modelPreference: InlineCompletionModelPreference | undefined,
     ): Promise<vscode.LanguageModelChat | undefined> {
         const effectiveSelector =
@@ -1285,6 +1303,7 @@ function createState(options: {
     const effectiveProfileId = overrides.profileId ?? configuredProfileId;
     const profile = getInlineCompletionDebugPresetProfile(effectiveProfileId);
     const configuredModelSelector = getConfiguredModelSelector();
+    const configuredContinuationModelSelector = getConfiguredContinuationModelSelector();
     const effectiveOption =
         (profile ? undefined : options.effectiveDefaultModelOption) ??
         pickDefaultModelOption(
@@ -1292,15 +1311,25 @@ function createState(options: {
             configuredModelSelector,
             profile?.modelPreference,
         );
+    const effectiveContinuationOption = configuredContinuationModelSelector
+        ? pickConfiguredModelOption(
+              options.availableModels,
+              configuredContinuationModelSelector,
+              profile?.modelPreference,
+          )
+        : undefined;
     return {
         events: inlineCompletionDebugStore.getEvents(),
         overrides,
         defaults: {
             configuredModelSelector,
+            configuredContinuationModelSelector,
             configuredProfileId,
             effectiveProfileId,
             effectiveModelSelector: effectiveOption?.selector,
             effectiveModelLabel: effectiveOption?.label,
+            effectiveContinuationModelSelector: effectiveContinuationOption?.selector,
+            effectiveContinuationModelLabel: effectiveContinuationOption?.label,
             useSchemaContext: getConfiguredUseSchemaContext(),
             debounceMs: profile?.debounceMs ?? automaticTriggerDebounceMs,
             continuationMaxTokens: continuationModeMaxTokens,
@@ -1386,6 +1415,24 @@ function pickDefaultModelOption(
     return selectPreferredModel(availableModels, modelPreference);
 }
 
+function pickConfiguredModelOption(
+    availableModels: InlineCompletionDebugModelOption[],
+    configuredSelector: string,
+    modelPreference?: InlineCompletionModelPreference,
+): InlineCompletionDebugModelOption | undefined {
+    const trimmed = configuredSelector.trim();
+    if (trimmed) {
+        const matched =
+            availableModels.find((model) => model.selector === trimmed) ??
+            availableModels.find((model) => model.family === trimmed);
+        if (matched) {
+            return matched;
+        }
+    }
+
+    return selectPreferredModel(availableModels, modelPreference);
+}
+
 function compareModelOptions(
     left: InlineCompletionDebugModelOption,
     right: InlineCompletionDebugModelOption,
@@ -1409,6 +1456,15 @@ function getConfiguredModelSelector(): string | undefined {
     );
 }
 
+function getConfiguredContinuationModelSelector(): string | undefined {
+    return (
+        vscode.workspace
+            .getConfiguration()
+            .get<string>(Constants.configCopilotInlineCompletionsContinuationModelFamily, "")
+            ?.trim() || undefined
+    );
+}
+
 function getConfiguredInlineCompletionProfileId(): InlineCompletionDebugProfileId | undefined {
     const configured = vscode.workspace
         .getConfiguration()
@@ -1427,6 +1483,23 @@ function getEffectiveOverridesWithConfiguredProfile(
         ...overrides,
         profileId: getConfiguredInlineCompletionProfileId() ?? null,
     };
+}
+
+function getModelSelectorForCompletionCategory(
+    overrides: InlineCompletionDebugOverrides,
+    completionCategory: InlineCompletionCategory,
+    configuredContinuationModelSelector: string | undefined,
+): string | undefined {
+    if (completionCategory === "continuation") {
+        return (
+            overrides.continuationModelSelector ??
+            configuredContinuationModelSelector ??
+            overrides.modelSelector ??
+            undefined
+        );
+    }
+
+    return overrides.modelSelector ?? undefined;
 }
 
 function getConfiguredUseSchemaContext(): boolean {
@@ -1547,6 +1620,9 @@ function getOverridesApplied(overrides: InlineCompletionDebugOverrides) {
     return {
         ...(overrides.profileId ? { profileId: overrides.profileId } : {}),
         ...(overrides.modelSelector ? { modelSelector: overrides.modelSelector } : {}),
+        ...(overrides.continuationModelSelector
+            ? { continuationModelSelector: overrides.continuationModelSelector }
+            : {}),
         ...(overrides.useSchemaContext !== null
             ? { useSchemaContext: overrides.useSchemaContext }
             : {}),

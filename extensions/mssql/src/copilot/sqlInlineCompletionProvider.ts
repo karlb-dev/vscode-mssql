@@ -35,6 +35,7 @@ import {
     InlineCompletionCategory,
     InlineCompletionDebugEvent,
     InlineCompletionDebugEventResult,
+    InlineCompletionDebugOverrides,
     InlineCompletionDebugPromptMessage,
     InlineCompletionResult,
     inlineCompletionCategories,
@@ -93,9 +94,7 @@ export class SqlInlineCompletionProvider
 {
     private readonly _logger = logger2.withPrefix("SqlInlineCompletion");
     private readonly _disposables: vscode.Disposable[] = [];
-    private _cachedModel: vscode.LanguageModelChat | undefined;
-    private _cachedModelInitialized: boolean = false;
-    private _cachedModelSelectorKey: string | undefined;
+    private readonly _cachedModels = new Map<string, vscode.LanguageModelChat | undefined>();
 
     constructor(
         private readonly _context: vscode.ExtensionContext,
@@ -109,6 +108,9 @@ export class SqlInlineCompletionProvider
                 if (
                     e.affectsConfiguration(Constants.configCopilotInlineCompletionsProfile) ||
                     e.affectsConfiguration(Constants.configCopilotInlineCompletionsModelFamily) ||
+                    e.affectsConfiguration(
+                        Constants.configCopilotInlineCompletionsContinuationModelFamily,
+                    ) ||
                     e.affectsConfiguration(Constants.configCopilotInlineCompletionsModelVendors)
                 ) {
                     this.clearModelCache();
@@ -257,6 +259,9 @@ export class SqlInlineCompletionProvider
             overridesApplied: {
                 ...(overrides.profileId ? { profileId: overrides.profileId } : {}),
                 ...(overrides.modelSelector ? { modelSelector: overrides.modelSelector } : {}),
+                ...(overrides.continuationModelSelector
+                    ? { continuationModelSelector: overrides.continuationModelSelector }
+                    : {}),
                 ...(overrides.useSchemaContext !== null
                     ? { useSchemaContext: overrides.useSchemaContext }
                     : {}),
@@ -369,7 +374,11 @@ export class SqlInlineCompletionProvider
             recordPendingDebugEvent();
 
             selectedModel = await this.getLanguageModel(
-                overrides.modelSelector ?? undefined,
+                getModelSelectorForCompletionCategory(
+                    overrides,
+                    completionCategory,
+                    this.getConfiguredContinuationModelSelector(),
+                ),
                 profile?.modelPreference,
             );
             if (!selectedModel) {
@@ -629,6 +638,15 @@ export class SqlInlineCompletionProvider
         );
     }
 
+    private getConfiguredContinuationModelSelector(): string | undefined {
+        return (
+            vscode.workspace
+                .getConfiguration()
+                .get<string>(Constants.configCopilotInlineCompletionsContinuationModelFamily, "")
+                ?.trim() || undefined
+        );
+    }
+
     private getRecordWhenClosedSetting(): boolean {
         return (
             vscode.workspace
@@ -651,32 +669,25 @@ export class SqlInlineCompletionProvider
             effectiveSelector || "__auto__"
         }|${getModelPreferenceCacheKey(modelPreference)}`;
 
-        if (this._cachedModelInitialized && this._cachedModelSelectorKey === cacheKey) {
-            return this._cachedModel;
-        }
-
-        if (this._cachedModelSelectorKey !== cacheKey) {
-            this.clearModelCache();
+        if (this._cachedModels.has(cacheKey)) {
+            return this._cachedModels.get(cacheKey);
         }
 
         const all = await selectConfiguredLanguageModels();
         if (effectiveSelector) {
             const matched = matchLanguageModelChatToSelector(all, effectiveSelector);
             if (matched) {
-                this._cachedModel = matched;
-                this._cachedModelInitialized = true;
-                this._cachedModelSelectorKey = cacheKey;
-                return this._cachedModel;
+                this._cachedModels.set(cacheKey, matched);
+                return matched;
             }
             this._logger.debug(
                 `Configured model "${effectiveSelector}" not available; selecting best available language model.`,
             );
         }
 
-        this._cachedModel = selectPreferredModel(all, modelPreference);
-        this._cachedModelInitialized = true;
-        this._cachedModelSelectorKey = cacheKey;
-        return this._cachedModel;
+        const selectedModel = selectPreferredModel(all, modelPreference);
+        this._cachedModels.set(cacheKey, selectedModel);
+        return selectedModel;
     }
 
     private sendInlineCompletionTelemetry(
@@ -705,10 +716,25 @@ export class SqlInlineCompletionProvider
     }
 
     private clearModelCache(): void {
-        this._cachedModel = undefined;
-        this._cachedModelInitialized = false;
-        this._cachedModelSelectorKey = undefined;
+        this._cachedModels.clear();
     }
+}
+
+function getModelSelectorForCompletionCategory(
+    overrides: InlineCompletionDebugOverrides,
+    completionCategory: InlineCompletionCategory,
+    configuredContinuationModelSelector: string | undefined,
+): string | undefined {
+    if (completionCategory === "continuation") {
+        return (
+            overrides.continuationModelSelector ??
+            configuredContinuationModelSelector ??
+            overrides.modelSelector ??
+            undefined
+        );
+    }
+
+    return overrides.modelSelector ?? undefined;
 }
 
 function getConfiguredInlineCompletionProfileId() {
