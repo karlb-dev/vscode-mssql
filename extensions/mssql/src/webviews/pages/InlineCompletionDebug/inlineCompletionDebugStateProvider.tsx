@@ -6,6 +6,7 @@
 import { createContext, ReactNode, useCallback, useContext } from "react";
 import { useVscodeWebview } from "../../common/vscodeWebviewProvider";
 import {
+    InlineCompletionDebugEvent,
     InlineCompletionDebugProfileId,
     InlineCompletionDebugReducers,
     InlineCompletionDebugWebviewState,
@@ -24,7 +25,16 @@ export interface InlineCompletionDebugContextProps {
     refreshSchemaContext: () => void;
     importSession: () => void;
     exportSession: () => void;
+    saveTraceNow: () => void;
+    sessionsActivated: () => void;
+    sessionsRefresh: () => void;
+    sessionsToggleTrace: (fileKey: string, included: boolean) => void;
+    sessionsLoadIncluded: () => void;
+    sessionsAddFile: () => void;
+    sessionsChangeFolder: () => void;
+    sessionsSyncToDatabase: () => void;
     replayEvent: (eventId: string) => void;
+    replaySessionEvent: (event: InlineCompletionDebugEvent) => void;
     copyEventPayload: (
         eventId: string,
         kind:
@@ -111,9 +121,51 @@ export const InlineCompletionDebugStateProvider = ({ children }: { children: Rea
         extensionRpc.action("exportSession", {});
     }, [extensionRpc]);
 
+    const saveTraceNow = useCallback(() => {
+        extensionRpc.action("saveTraceNow", {});
+    }, [extensionRpc]);
+
+    const sessionsActivated = useCallback(() => {
+        extensionRpc.action("sessionsActivated", {});
+    }, [extensionRpc]);
+
+    const sessionsRefresh = useCallback(() => {
+        extensionRpc.action("sessionsRefresh", {});
+    }, [extensionRpc]);
+
+    const sessionsToggleTrace = useCallback(
+        (fileKey: string, included: boolean) => {
+            extensionRpc.action("sessionsToggleTrace", { fileKey, included });
+        },
+        [extensionRpc],
+    );
+
+    const sessionsLoadIncluded = useCallback(() => {
+        extensionRpc.action("sessionsLoadIncluded", {});
+    }, [extensionRpc]);
+
+    const sessionsAddFile = useCallback(() => {
+        extensionRpc.action("sessionsAddFile", {});
+    }, [extensionRpc]);
+
+    const sessionsChangeFolder = useCallback(() => {
+        extensionRpc.action("sessionsChangeFolder", {});
+    }, [extensionRpc]);
+
+    const sessionsSyncToDatabase = useCallback(() => {
+        extensionRpc.action("sessionsSyncToDatabase", {});
+    }, [extensionRpc]);
+
     const replayEvent = useCallback(
         (eventId: string) => {
             extensionRpc.action("replayEvent", { eventId });
+        },
+        [extensionRpc],
+    );
+
+    const replaySessionEvent = useCallback(
+        (event: InlineCompletionDebugEvent) => {
+            extensionRpc.action("replaySessionEvent", { event });
         },
         [extensionRpc],
     );
@@ -150,7 +202,16 @@ export const InlineCompletionDebugStateProvider = ({ children }: { children: Rea
                 refreshSchemaContext,
                 importSession,
                 exportSession,
+                saveTraceNow,
+                sessionsActivated,
+                sessionsRefresh,
+                sessionsToggleTrace,
+                sessionsLoadIncluded,
+                sessionsAddFile,
+                sessionsChangeFolder,
+                sessionsSyncToDatabase,
                 replayEvent,
+                replaySessionEvent,
                 copyEventPayload,
             }}>
             {children}

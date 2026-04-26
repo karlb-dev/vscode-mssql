@@ -18,7 +18,7 @@ const useStyles = makeStyles({
     root: {
         display: "flex",
         flexDirection: "column",
-        height: "100vh",
+        height: "100%",
         width: "100%",
         backgroundColor: "var(--vscode-editor-background)",
         color: "var(--vscode-foreground)",
@@ -152,6 +152,7 @@ export const InlineCompletionDebugPage = () => {
                             onSelectEvent={selectEvent}
                             autoScroll={autoScroll}
                             resizeToken={gridResizeToken}
+                            showReplay={true}
                         />
                     </div>
                 </Panel>

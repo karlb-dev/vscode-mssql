@@ -11,6 +11,14 @@ import VscodeWrapper from "../../controllers/vscodeWrapper";
 import { logger2 } from "../../models/logger2";
 import { getErrorMessage } from "../../utils/utils";
 import {
+    createTraceFolderWatcher,
+    indexTraceFile,
+    loadTraceFile,
+    normalizeTraceFile,
+    scanTraceFolder,
+} from "./traceLoader";
+import { getConfiguredTraceFolder, saveInlineCompletionTraceNow } from "./tracePersistence";
+import {
     automaticTriggerDebounceMs,
     buildCompletionRules,
     buildInlineCompletionPromptMessages,
@@ -53,11 +61,11 @@ import {
 import { inlineCompletionDebugStore } from "./inlineCompletionDebugStore";
 import {
     InlineCompletionDebugEvent,
-    InlineCompletionDebugExportData,
     InlineCompletionDebugModelOption,
     InlineCompletionDebugOverrides,
     InlineCompletionDebugProfileId,
     InlineCompletionDebugSchemaContextOverrides,
+    InlineCompletionDebugSessionsState,
     InlineCompletionDebugWebviewState,
     InlineCompletionDebugReducers,
 } from "../../sharedInterfaces/inlineCompletionDebug";
@@ -86,6 +94,8 @@ export class InlineCompletionDebugController extends WebviewPanelController<
     private _effectiveDefaultModelOption: InlineCompletionDebugModelOption | undefined;
     private _savedCustomPromptValue: string | null;
     private _customPromptLastSavedAt: number | undefined;
+    private _sessionsState: InlineCompletionDebugSessionsState;
+    private _traceFolderWatcher: vscode.FileSystemWatcher | undefined;
 
     constructor(
         private readonly _extensionContext: vscode.ExtensionContext,
@@ -111,6 +121,7 @@ export class InlineCompletionDebugController extends WebviewPanelController<
             createState({
                 availableModels: [],
                 effectiveDefaultModelOption: undefined,
+                sessions: createEmptySessionsState(getConfiguredTraceFolder(_extensionContext)),
                 selectedEventId: undefined,
                 customPromptDialogOpen: false,
                 customPromptValue: savedCustomPrompt,
@@ -125,6 +136,7 @@ export class InlineCompletionDebugController extends WebviewPanelController<
 
         this._savedCustomPromptValue = savedCustomPrompt;
         this._customPromptLastSavedAt = savedCustomPromptAt;
+        this._sessionsState = createEmptySessionsState(getConfiguredTraceFolder(_extensionContext));
         inlineCompletionDebugStore.setPanelOpen(true);
         this.registerDisposables();
         this.registerReducers();
@@ -132,6 +144,8 @@ export class InlineCompletionDebugController extends WebviewPanelController<
     }
 
     public override dispose(): void {
+        this._traceFolderWatcher?.dispose();
+        this._traceFolderWatcher = undefined;
         inlineCompletionDebugStore.setPanelOpen(false);
         super.dispose();
     }
@@ -159,8 +173,14 @@ export class InlineCompletionDebugController extends WebviewPanelController<
                     e.affectsConfiguration(
                         Constants.configCopilotInlineCompletionsUseSchemaContext,
                     ) ||
-                    e.affectsConfiguration(Constants.configCopilotInlineCompletionsSchemaContext)
+                    e.affectsConfiguration(Constants.configCopilotInlineCompletionsSchemaContext) ||
+                    e.affectsConfiguration(Constants.configCopilotInlineCompletionsTraceFolder)
                 ) {
+                    if (
+                        e.affectsConfiguration(Constants.configCopilotInlineCompletionsTraceFolder)
+                    ) {
+                        void this.refreshSessions({ resetFolder: true });
+                    }
                     this.updateState(this.createState());
                 }
                 if (
@@ -285,6 +305,78 @@ export class InlineCompletionDebugController extends WebviewPanelController<
             });
         });
 
+        this.registerReducer("saveTraceNow", async (state) => {
+            await saveInlineCompletionTraceNow(this._extensionContext);
+            return this.createState({
+                selectedEventId: state.selectedEventId,
+                customPromptDialogOpen: state.customPrompt.dialogOpen,
+            });
+        });
+
+        this.registerReducer("sessionsActivated", async (state) => {
+            await this.refreshSessions();
+            return this.createState({
+                selectedEventId: state.selectedEventId,
+                customPromptDialogOpen: state.customPrompt.dialogOpen,
+            });
+        });
+
+        this.registerReducer("sessionsRefresh", async (state) => {
+            await this.refreshSessions();
+            return this.createState({
+                selectedEventId: state.selectedEventId,
+                customPromptDialogOpen: state.customPrompt.dialogOpen,
+            });
+        });
+
+        this.registerReducer("sessionsToggleTrace", async (state, payload) => {
+            this._sessionsState = {
+                ...this._sessionsState,
+                traceIndex: this._sessionsState.traceIndex.map((entry) =>
+                    entry.fileKey === payload.fileKey
+                        ? { ...entry, included: payload.included }
+                        : entry,
+                ),
+            };
+            await this.loadIncludedSessionTraces();
+            return this.createState({
+                selectedEventId: state.selectedEventId,
+                customPromptDialogOpen: state.customPrompt.dialogOpen,
+            });
+        });
+
+        this.registerReducer("sessionsLoadIncluded", async (state) => {
+            await this.loadIncludedSessionTraces();
+            return this.createState({
+                selectedEventId: state.selectedEventId,
+                customPromptDialogOpen: state.customPrompt.dialogOpen,
+            });
+        });
+
+        this.registerReducer("sessionsAddFile", async (state) => {
+            await this.addSessionTraceFile();
+            return this.createState({
+                selectedEventId: state.selectedEventId,
+                customPromptDialogOpen: state.customPrompt.dialogOpen,
+            });
+        });
+
+        this.registerReducer("sessionsChangeFolder", async (state) => {
+            await this.changeTraceFolder();
+            return this.createState({
+                selectedEventId: state.selectedEventId,
+                customPromptDialogOpen: state.customPrompt.dialogOpen,
+            });
+        });
+
+        this.registerReducer("sessionsSyncToDatabase", async (state) => {
+            await this.showSyncToDatabaseNotImplemented();
+            return this.createState({
+                selectedEventId: state.selectedEventId,
+                customPromptDialogOpen: state.customPrompt.dialogOpen,
+            });
+        });
+
         this.registerReducer("copyEventPayload", async (state, payload) => {
             await this.copyEventPayload(payload.eventId, payload.kind);
             return this.createState({
@@ -295,6 +387,14 @@ export class InlineCompletionDebugController extends WebviewPanelController<
 
         this.registerReducer("replayEvent", async (state, payload) => {
             await this.replayEvent(payload.eventId);
+            return this.createState({
+                selectedEventId: state.selectedEventId,
+                customPromptDialogOpen: state.customPrompt.dialogOpen,
+            });
+        });
+
+        this.registerReducer("replaySessionEvent", async (state, payload) => {
+            await this.replaySourceEvent(payload.event);
             return this.createState({
                 selectedEventId: state.selectedEventId,
                 customPromptDialogOpen: state.customPrompt.dialogOpen,
@@ -316,6 +416,7 @@ export class InlineCompletionDebugController extends WebviewPanelController<
         return createState({
             availableModels: this._availableModels,
             effectiveDefaultModelOption: this._effectiveDefaultModelOption,
+            sessions: this._sessionsState,
             selectedEventId: overrides?.selectedEventId ?? this.state?.selectedEventId,
             customPromptDialogOpen:
                 overrides?.customPromptDialogOpen ?? this.state?.customPrompt.dialogOpen ?? false,
@@ -476,6 +577,7 @@ export class InlineCompletionDebugController extends WebviewPanelController<
 
         const exportData = inlineCompletionDebugStore.exportSession(
             getRecordWhenClosedSetting(),
+            getExtensionVersion(this._extensionContext),
             this._customPromptLastSavedAt,
         );
         await vscode.workspace.fs.writeFile(
@@ -500,9 +602,10 @@ export class InlineCompletionDebugController extends WebviewPanelController<
         }
 
         const fileContents = await vscode.workspace.fs.readFile(fileUri);
-        const parsed = JSON.parse(
-            new TextDecoder().decode(fileContents),
-        ) as InlineCompletionDebugExportData;
+        const parsed = normalizeTraceFile(
+            JSON.parse(new TextDecoder().decode(fileContents)),
+            fileUri.fsPath,
+        );
         inlineCompletionDebugStore.importSession(parsed);
         await vscode.workspace
             .getConfiguration()
@@ -515,6 +618,218 @@ export class InlineCompletionDebugController extends WebviewPanelController<
             parsed.overrides?.customSystemPrompt ?? null,
             parsed.customPromptLastSavedAt,
             false,
+        );
+    }
+
+    private async refreshSessions(options: { resetFolder?: boolean } = {}): Promise<void> {
+        const traceFolder = getConfiguredTraceFolder(this._extensionContext);
+        if (options.resetFolder || traceFolder !== this._sessionsState.traceFolder) {
+            this._traceFolderWatcher?.dispose();
+            this._traceFolderWatcher = undefined;
+            this._sessionsState = createEmptySessionsState(traceFolder);
+        }
+
+        this.ensureTraceFolderWatcher(traceFolder);
+        this._sessionsState = {
+            ...this._sessionsState,
+            traceFolder,
+            loading: true,
+            error: undefined,
+        };
+        this.updateState(this.createState());
+
+        try {
+            const hadExistingIndex = this._sessionsState.traceIndex.length > 0;
+            const includedFileKeys = new Set(
+                this._sessionsState.traceIndex
+                    .filter((entry) => entry.included)
+                    .map((entry) => entry.fileKey),
+            );
+            const loadedFileKeys = new Set(
+                this._sessionsState.loadedTraces.map((trace) => trace.fileKey),
+            );
+            const folderEntries = await scanTraceFolder(
+                traceFolder,
+                hadExistingIndex ? includedFileKeys : new Set(),
+                loadedFileKeys,
+            );
+            const importedEntries = this._sessionsState.traceIndex.filter(
+                (entry) => entry.imported,
+            );
+            const mergedEntries = mergeTraceIndexEntries(folderEntries, importedEntries);
+
+            this._sessionsState = {
+                ...this._sessionsState,
+                traceIndex: mergedEntries,
+                loading: false,
+                lastRefreshedAt: Date.now(),
+            };
+            await this.loadIncludedSessionTraces();
+        } catch (error) {
+            this._sessionsState = {
+                ...this._sessionsState,
+                loading: false,
+                error: getErrorMessage(error),
+            };
+        }
+
+        if (!this.isDisposed) {
+            this.updateState(this.createState());
+        }
+    }
+
+    private ensureTraceFolderWatcher(traceFolder: string): void {
+        if (this._traceFolderWatcher) {
+            return;
+        }
+
+        this._traceFolderWatcher = createTraceFolderWatcher(traceFolder, () => {
+            if (!this.isDisposed) {
+                void this.refreshSessions();
+            }
+        });
+    }
+
+    private async loadIncludedSessionTraces(): Promise<void> {
+        const includedEntries = this._sessionsState.traceIndex.filter(
+            (entry) => entry.included && !entry.loadError,
+        );
+        const cached = new Map(
+            this._sessionsState.loadedTraces.map((loaded) => [loaded.fileKey, loaded.trace]),
+        );
+        const unloadedEntries = includedEntries.filter((entry) => !cached.has(entry.fileKey));
+        const totalEventCount = includedEntries.reduce((sum, entry) => sum + entry.eventCount, 0);
+
+        if (totalEventCount > 100_000) {
+            const selection = await vscode.window.showWarningMessage(
+                `The selected trace dataset contains ${totalEventCount.toLocaleString()} events. Loading it may use significant memory.`,
+                { modal: false },
+                "Load traces",
+            );
+            if (selection !== "Load traces") {
+                this._sessionsState = {
+                    ...this._sessionsState,
+                    warning: "Dataset load cancelled because it exceeds 100,000 events.",
+                };
+                return;
+            }
+        }
+
+        if (unloadedEntries.length === 0) {
+            this._sessionsState = {
+                ...this._sessionsState,
+                traceIndex: this._sessionsState.traceIndex.map((entry) => ({
+                    ...entry,
+                    loaded: cached.has(entry.fileKey),
+                })),
+                warning: undefined,
+            };
+            return;
+        }
+
+        this._sessionsState = {
+            ...this._sessionsState,
+            loading: true,
+            warning: undefined,
+        };
+        this.updateState(this.createState());
+
+        const newlyLoaded = [];
+        const loadErrors = new Map<string, string>();
+        for (const entry of unloadedEntries) {
+            try {
+                const trace = await loadTraceFile(entry.path);
+                cached.set(entry.fileKey, trace);
+                newlyLoaded.push({ fileKey: entry.fileKey, trace });
+            } catch (error) {
+                loadErrors.set(entry.fileKey, getErrorMessage(error));
+            }
+        }
+
+        this._sessionsState = {
+            ...this._sessionsState,
+            loadedTraces: [
+                ...this._sessionsState.loadedTraces,
+                ...newlyLoaded.filter(
+                    (loaded) =>
+                        !this._sessionsState.loadedTraces.some(
+                            (existing) => existing.fileKey === loaded.fileKey,
+                        ),
+                ),
+            ],
+            traceIndex: this._sessionsState.traceIndex.map((entry) => ({
+                ...entry,
+                loaded: cached.has(entry.fileKey),
+                loadError: loadErrors.get(entry.fileKey) ?? entry.loadError,
+            })),
+            loading: false,
+        };
+    }
+
+    private async addSessionTraceFile(): Promise<void> {
+        const fileUris = await vscode.window.showOpenDialog({
+            title: "Add Inline Completion Trace File",
+            canSelectFiles: true,
+            canSelectMany: true,
+            filters: {
+                JSON: ["json"],
+            },
+        });
+
+        if (!fileUris?.length) {
+            return;
+        }
+
+        const loadedTraces = [...this._sessionsState.loadedTraces];
+        const entries = [...this._sessionsState.traceIndex];
+        for (const fileUri of fileUris) {
+            const trace = await loadTraceFile(fileUri.fsPath);
+            const stat = await vscode.workspace.fs.stat(fileUri);
+            const entry = await indexTraceFile(fileUri.fsPath, {
+                included: true,
+                loaded: true,
+                imported: true,
+            });
+            entries.push({ ...entry, fileSizeBytes: stat.size });
+            loadedTraces.push({ fileKey: fileUri.fsPath, trace });
+        }
+
+        this._sessionsState = {
+            ...this._sessionsState,
+            traceIndex: mergeTraceIndexEntries(entries, []),
+            loadedTraces: dedupeLoadedTraces(loadedTraces),
+            error: undefined,
+        };
+    }
+
+    private async changeTraceFolder(): Promise<void> {
+        const selectedFolders = await vscode.window.showOpenDialog({
+            title: "Choose Inline Completion Trace Folder",
+            canSelectFiles: false,
+            canSelectFolders: true,
+            canSelectMany: false,
+            defaultUri: vscode.Uri.file(this._sessionsState.traceFolder),
+        });
+        const selectedFolder = selectedFolders?.[0];
+        if (!selectedFolder) {
+            return;
+        }
+
+        await vscode.workspace
+            .getConfiguration()
+            .update(
+                Constants.configCopilotInlineCompletionsTraceFolder,
+                selectedFolder.fsPath,
+                getConfigurationTarget(),
+            );
+        await this.refreshSessions({ resetFolder: true });
+    }
+
+    private async showSyncToDatabaseNotImplemented(): Promise<void> {
+        await vscode.window.showInformationMessage(
+            `Database sync is not yet implemented. Traces are currently saved to: ${getConfiguredTraceFolder(
+                this._extensionContext,
+            )}`,
         );
     }
 
@@ -570,6 +885,10 @@ export class InlineCompletionDebugController extends WebviewPanelController<
             return;
         }
 
+        await this.replaySourceEvent(sourceEvent);
+    }
+
+    private async replaySourceEvent(sourceEvent: InlineCompletionDebugEvent): Promise<void> {
         const overrides = inlineCompletionDebugStore.getOverrides();
         const profile = getInlineCompletionDebugPresetProfile(overrides.profileId);
         const selectedModel = await this.selectReplayModel(
@@ -940,6 +1259,7 @@ export class InlineCompletionDebugController extends WebviewPanelController<
 function createState(options: {
     availableModels: InlineCompletionDebugModelOption[];
     effectiveDefaultModelOption: InlineCompletionDebugModelOption | undefined;
+    sessions: InlineCompletionDebugSessionsState;
     selectedEventId: string | undefined;
     customPromptDialogOpen: boolean;
     customPromptValue: string | null;
@@ -986,7 +1306,51 @@ function createState(options: {
             defaultValue: DEFAULT_CUSTOM_PROMPT,
             lastSavedAt: options.customPromptLastSavedAt,
         },
+        sessions: options.sessions,
     };
+}
+
+function createEmptySessionsState(traceFolder: string): InlineCompletionDebugSessionsState {
+    return {
+        traceFolder,
+        traceIndex: [],
+        loadedTraces: [],
+        loading: false,
+    };
+}
+
+function mergeTraceIndexEntries(
+    primaryEntries: InlineCompletionDebugSessionsState["traceIndex"],
+    secondaryEntries: InlineCompletionDebugSessionsState["traceIndex"],
+): InlineCompletionDebugSessionsState["traceIndex"] {
+    const byKey = new Map<string, InlineCompletionDebugSessionsState["traceIndex"][number]>();
+    for (const entry of [...secondaryEntries, ...primaryEntries]) {
+        byKey.set(entry.fileKey, {
+            ...byKey.get(entry.fileKey),
+            ...entry,
+        });
+    }
+
+    return Array.from(byKey.values()).sort(
+        (left, right) =>
+            (right.savedAt ?? "").localeCompare(left.savedAt ?? "") ||
+            left.filename.localeCompare(right.filename),
+    );
+}
+
+function dedupeLoadedTraces(
+    traces: InlineCompletionDebugSessionsState["loadedTraces"],
+): InlineCompletionDebugSessionsState["loadedTraces"] {
+    const byKey = new Map<string, InlineCompletionDebugSessionsState["loadedTraces"][number]>();
+    for (const trace of traces) {
+        byKey.set(trace.fileKey, trace);
+    }
+    return Array.from(byKey.values());
+}
+
+function getExtensionVersion(context: vscode.ExtensionContext): string {
+    const packageJson = context.extension.packageJSON as { version?: unknown } | undefined;
+    return typeof packageJson?.version === "string" ? packageJson.version : "unknown";
 }
 
 function pickDefaultModelOption(

@@ -195,6 +195,7 @@ export interface InlineCompletionDebugWebviewState {
     selectedEventId?: string;
     recordWhenClosed: boolean;
     customPrompt: InlineCompletionDebugCustomPromptState;
+    sessions: InlineCompletionDebugSessionsState;
 }
 
 export interface InlineCompletionDebugReducers {
@@ -220,8 +221,22 @@ export interface InlineCompletionDebugReducers {
     refreshSchemaContext: Record<string, never>;
     importSession: Record<string, never>;
     exportSession: Record<string, never>;
+    saveTraceNow: Record<string, never>;
+    sessionsActivated: Record<string, never>;
+    sessionsRefresh: Record<string, never>;
+    sessionsToggleTrace: {
+        fileKey: string;
+        included: boolean;
+    };
+    sessionsLoadIncluded: Record<string, never>;
+    sessionsAddFile: Record<string, never>;
+    sessionsChangeFolder: Record<string, never>;
+    sessionsSyncToDatabase: Record<string, never>;
     replayEvent: {
         eventId: string;
+    };
+    replaySessionEvent: {
+        event: InlineCompletionDebugEvent;
     };
     copyEventPayload: {
         eventId: string;
@@ -239,8 +254,47 @@ export interface InlineCompletionDebugReducers {
 export interface InlineCompletionDebugExportData {
     version: 1;
     exportedAt: number;
+    _savedAt: string;
+    _extensionVersion: string;
+    _truncated?: true;
     overrides: InlineCompletionDebugOverrides;
     recordWhenClosed: boolean;
     customPromptLastSavedAt?: number;
     events: InlineCompletionDebugEvent[];
+}
+
+export interface InlineCompletionDebugTraceIndexEntry {
+    fileKey: string;
+    filename: string;
+    path: string;
+    savedAt?: string;
+    sessionId?: string;
+    eventCount: number;
+    dateRange?: {
+        start: number;
+        end: number;
+    };
+    fileSizeBytes: number;
+    profile?: string;
+    schemaMode?: string;
+    schemaSizeKind?: string;
+    included: boolean;
+    loaded: boolean;
+    imported: boolean;
+    loadError?: string;
+}
+
+export interface InlineCompletionDebugLoadedTrace {
+    fileKey: string;
+    trace: InlineCompletionDebugExportData;
+}
+
+export interface InlineCompletionDebugSessionsState {
+    traceFolder: string;
+    traceIndex: InlineCompletionDebugTraceIndexEntry[];
+    loadedTraces: InlineCompletionDebugLoadedTrace[];
+    loading: boolean;
+    warning?: string;
+    error?: string;
+    lastRefreshedAt?: number;
 }

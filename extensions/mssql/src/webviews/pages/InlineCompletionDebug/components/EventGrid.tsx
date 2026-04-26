@@ -17,7 +17,14 @@ import {
 import { useInlineCompletionDebugContext } from "../inlineCompletionDebugStateProvider";
 import { getInfoText } from "../inlineCompletionDebug";
 
-const GRID_CONTAINER_ID = "inlineCompletionDebugGridContainer";
+const GRID_ROW_ID_PROPERTY = "__inlineCompletionDebugGridRowId";
+const GRID_SELECTION_ID_PROPERTY = "__inlineCompletionDebugSelectionId";
+let nextGridInstanceId = 0;
+
+type InlineCompletionDebugGridRow = InlineCompletionDebugEvent & {
+    [GRID_ROW_ID_PROPERTY]: string;
+    [GRID_SELECTION_ID_PROPERTY]: string;
+};
 
 const useStyles = makeStyles({
     container: {
@@ -31,26 +38,47 @@ export const InlineCompletionDebugEventGrid = ({
     onSelectEvent,
     autoScroll,
     resizeToken,
+    onCopyEventPayload,
+    onReplayEvent,
+    showReplay = true,
+    getEventKey,
 }: {
     events: InlineCompletionDebugEvent[];
     onSelectEvent: (eventId?: string) => void;
     autoScroll: boolean;
     resizeToken: number;
+    onCopyEventPayload?: (
+        event: InlineCompletionDebugEvent,
+        kind: "id" | "json" | "prompt" | "rawResponse" | "sanitizedResponse",
+    ) => void;
+    onReplayEvent?: (event: InlineCompletionDebugEvent) => void;
+    showReplay?: boolean;
+    getEventKey?: (event: InlineCompletionDebugEvent, index: number) => string;
 }) => {
     const classes = useStyles();
     const { themeKind } = useVscodeWebview();
     const { copyEventPayload, replayEvent } = useInlineCompletionDebugContext();
     const reactGridRef = useRef<SlickgridReactInstance | undefined>(undefined);
     const resizeRafRef = useRef<number | null>(null);
-    const eventsRef = useRef(events);
+    const gridInstanceIdRef = useRef<string | undefined>(undefined);
     const onSelectEventRef = useRef(onSelectEvent);
     const autoScrollRef = useRef(autoScroll);
     const eventCountRef = useRef(events.length);
     const pointerDownRef = useRef(false);
+    if (!gridInstanceIdRef.current) {
+        gridInstanceIdRef.current = createGridInstanceId();
+    }
+    const gridId = `${gridInstanceIdRef.current}Grid`;
+    const containerId = `${gridInstanceIdRef.current}Container`;
+    const gridRows = useMemo<InlineCompletionDebugGridRow[]>(
+        () => events.map((event, index) => createGridRow(event, index, getEventKey)),
+        [events, getEventKey],
+    );
+    const gridRowsRef = useRef(gridRows);
 
     useEffect(() => {
-        eventsRef.current = events;
-    }, [events]);
+        gridRowsRef.current = gridRows;
+    }, [gridRows]);
 
     useEffect(() => {
         onSelectEventRef.current = onSelectEvent;
@@ -64,7 +92,7 @@ export const InlineCompletionDebugEventGrid = ({
         eventCountRef.current = events.length;
     }, [events.length]);
 
-    const columns = useMemo<Column<InlineCompletionDebugEvent>[]>(
+    const columns = useMemo<Column<InlineCompletionDebugGridRow>[]>(
         () => [
             {
                 id: "id",
@@ -166,7 +194,8 @@ export const InlineCompletionDebugEventGrid = ({
     const gridOptions = useMemo<GridOption>(
         () => ({
             ...baseFluentReadOnlyGridOption,
-            autoResize: createFluentAutoResizeOptions("#inlineCompletionDebugGridContainer", {
+            datasetIdPropertyName: GRID_ROW_ID_PROPERTY,
+            autoResize: createFluentAutoResizeOptions(`#${containerId}`, {
                 bottomPadding: 0,
                 minHeight: 120,
             }),
@@ -193,63 +222,89 @@ export const InlineCompletionDebugEventGrid = ({
                         title: "Copy sanitized response",
                         iconCssClass: "fi fi-copy",
                     },
-                    { divider: true, command: "" },
-                    {
-                        command: "replay",
-                        title: "Replay with current overrides",
-                        iconCssClass: "fi fi-arrow-sync",
-                    },
+                    ...(showReplay
+                        ? [
+                              { divider: true, command: "" },
+                              {
+                                  command: "replay",
+                                  title: "Replay this event",
+                                  iconCssClass: "fi fi-arrow-sync",
+                              },
+                          ]
+                        : []),
                 ],
                 onCommand: (_event, args) => {
-                    const event = args?.dataContext as InlineCompletionDebugEvent | undefined;
-                    if (!event) {
+                    const gridRow = args?.dataContext as InlineCompletionDebugGridRow | undefined;
+                    if (!gridRow) {
                         return;
                     }
+                    const event = toDebugEvent(gridRow);
 
                     switch (args.command) {
                         case "copy-id":
-                            copyEventPayload(event.id, "id");
+                            onCopyEventPayload
+                                ? onCopyEventPayload(event, "id")
+                                : copyEventPayload(event.id, "id");
                             break;
                         case "copy-json":
-                            copyEventPayload(event.id, "json");
+                            onCopyEventPayload
+                                ? onCopyEventPayload(event, "json")
+                                : copyEventPayload(event.id, "json");
                             break;
                         case "copy-prompt":
-                            copyEventPayload(event.id, "prompt");
+                            onCopyEventPayload
+                                ? onCopyEventPayload(event, "prompt")
+                                : copyEventPayload(event.id, "prompt");
                             break;
                         case "copy-raw":
-                            copyEventPayload(event.id, "rawResponse");
+                            onCopyEventPayload
+                                ? onCopyEventPayload(event, "rawResponse")
+                                : copyEventPayload(event.id, "rawResponse");
                             break;
                         case "copy-sanitized":
-                            copyEventPayload(event.id, "sanitizedResponse");
+                            onCopyEventPayload
+                                ? onCopyEventPayload(event, "sanitizedResponse")
+                                : copyEventPayload(event.id, "sanitizedResponse");
                             break;
                         case "replay":
-                            replayEvent(event.id);
+                            onReplayEvent ? onReplayEvent(event) : replayEvent(event.id);
                             break;
                     }
                 },
             },
         }),
-        [copyEventPayload, replayEvent, themeKind],
+        [
+            containerId,
+            copyEventPayload,
+            onCopyEventPayload,
+            onReplayEvent,
+            replayEvent,
+            showReplay,
+            themeKind,
+        ],
     );
 
     const handleRowSelection = useCallback((rowIndex: number | undefined) => {
         if (rowIndex === undefined || rowIndex < 0) {
             return;
         }
-        const event = eventsRef.current[rowIndex];
+        const event =
+            (reactGridRef.current?.dataView?.getItem(rowIndex) as
+                | InlineCompletionDebugGridRow
+                | undefined) ?? gridRowsRef.current[rowIndex];
         if (event) {
-            onSelectEventRef.current(event.id);
+            onSelectEventRef.current(event[GRID_SELECTION_ID_PROPERTY]);
         }
     }, []);
 
     const clearGridFocusState = useCallback(() => {
         const activeElement = document.activeElement as HTMLElement | null;
-        const gridContainer = document.getElementById(GRID_CONTAINER_ID);
+        const gridContainer = document.getElementById(containerId);
         reactGridRef.current?.slickGrid?.resetActiveCell?.();
         if (activeElement && gridContainer?.contains(activeElement)) {
             activeElement.blur();
         }
-    }, []);
+    }, [containerId]);
 
     const scheduleGridResize = useCallback(() => {
         if (resizeRafRef.current !== null) {
@@ -258,10 +313,22 @@ export const InlineCompletionDebugEventGrid = ({
 
         resizeRafRef.current = requestAnimationFrame(() => {
             resizeRafRef.current = null;
+            const gridContainer = document.getElementById(containerId);
+            const containerRect = gridContainer?.getBoundingClientRect();
+            if (
+                !gridContainer ||
+                !containerRect ||
+                containerRect.width <= 0 ||
+                containerRect.height <= 0
+            ) {
+                return;
+            }
 
             const resizerService = reactGridRef.current?.resizerService;
             if (resizerService) {
                 void resizerService.resizeGrid();
+            } else {
+                reactGridRef.current?.slickGrid?.resizeCanvas?.();
             }
 
             if (!document.hasFocus()) {
@@ -272,11 +339,23 @@ export const InlineCompletionDebugEventGrid = ({
                 reactGridRef.current?.slickGrid?.scrollRowToTop(eventCountRef.current - 1);
             }
         });
-    }, [clearGridFocusState]);
+    }, [clearGridFocusState, containerId]);
 
     useEffect(() => {
         scheduleGridResize();
     }, [events.length, resizeToken, scheduleGridResize]);
+
+    useEffect(() => {
+        const gridContainer = document.getElementById(containerId);
+        if (!gridContainer || typeof ResizeObserver === "undefined") {
+            return;
+        }
+
+        const observer = new ResizeObserver(() => scheduleGridResize());
+        observer.observe(gridContainer);
+        scheduleGridResize();
+        return () => observer.disconnect();
+    }, [containerId, scheduleGridResize]);
 
     useEffect(() => {
         const handlePointerUp = () => {
@@ -343,16 +422,16 @@ export const InlineCompletionDebugEventGrid = ({
 
     return (
         <div
-            id={GRID_CONTAINER_ID}
+            id={containerId}
             className={classes.container}
             onMouseDownCapture={() => {
                 pointerDownRef.current = true;
             }}>
             <FluentSlickGrid
-                gridId="inlineCompletionDebugGrid"
+                gridId={gridId}
                 columns={columns}
                 options={gridOptions}
-                dataset={events}
+                dataset={gridRows}
                 onReactGridCreated={handleReactGridCreated}
                 onClick={handleGridClick}
                 onActiveCellChanged={handleActiveCellChanged}
@@ -361,6 +440,34 @@ export const InlineCompletionDebugEventGrid = ({
         </div>
     );
 };
+
+function createGridInstanceId(): string {
+    nextGridInstanceId++;
+    return `inlineCompletionDebugGrid${nextGridInstanceId}`;
+}
+
+function createGridRow(
+    event: InlineCompletionDebugEvent,
+    index: number,
+    getEventKey: ((event: InlineCompletionDebugEvent, index: number) => string) | undefined,
+): InlineCompletionDebugGridRow {
+    const eventKey = getEventKey?.(event, index);
+    const rowId = eventKey || `${index}:${event.id || "missing-id"}`;
+    return {
+        ...event,
+        [GRID_ROW_ID_PROPERTY]: rowId,
+        [GRID_SELECTION_ID_PROPERTY]: eventKey || event.id || rowId,
+    };
+}
+
+function toDebugEvent(gridRow: InlineCompletionDebugGridRow): InlineCompletionDebugEvent {
+    const {
+        [GRID_ROW_ID_PROPERTY]: _rowId,
+        [GRID_SELECTION_ID_PROPERTY]: _selectionId,
+        ...event
+    } = gridRow;
+    return event;
+}
 
 function monoFormatter(value: string): string {
     return `<span style="font-family: var(--vscode-editor-font-family, Consolas, monospace);">${escapeHtml(

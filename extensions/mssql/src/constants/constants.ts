@@ -153,6 +153,8 @@ export const cmdHandleSummaryOperation = "mssql.handleSummaryOperation";
 export const cmdOpenChangelog = "mssql.openChangelog";
 export const cmdOpenAzureDataStudioMigration = "mssql.openAzureDataStudioMigration";
 export const cmdOpenInlineCompletionDebug = "mssql.openInlineCompletionDebug";
+export const cmdCopilotCompletionsTraceSyncToDatabase =
+    "mssql.copilot.completions.trace.syncToDatabase";
 export const cmdSetAnthropicSdkLanguageModelApiKey =
     "mssql.copilot.sdkProviders.anthropic.setApiKey";
 export const cmdClearAnthropicSdkLanguageModelApiKey =
@@ -322,6 +324,14 @@ export const configCopilotInlineCompletionsEnabledCategories =
     "mssql.copilot.inlineCompletions.enabledCategories";
 export const configCopilotInlineCompletionsDebugRecordWhenClosed =
     "mssql.copilot.inlineCompletions.debug.recordWhenClosed";
+export const configCopilotInlineCompletionsTraceCaptureEnabled =
+    "mssql.copilot.inlineCompletions.trace.captureEnabled";
+export const configCopilotInlineCompletionsTraceFolder =
+    "mssql.copilot.inlineCompletions.trace.folder";
+export const configCopilotInlineCompletionsTraceRedactPrompts =
+    "mssql.copilot.inlineCompletions.trace.redactPrompts";
+export const configCopilotInlineCompletionsTraceMaxFileSizeMB =
+    "mssql.copilot.inlineCompletions.trace.maxFileSizeMB";
 export const configCopilotSdkProvidersAnthropicEnabled =
     "mssql.copilot.sdkProviders.anthropic.enabled";
 export const configCopilotSdkProvidersAnthropicAdditionalModels =

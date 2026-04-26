@@ -34,6 +34,7 @@ import {
     EditRegular,
     FilterRegular,
     Info16Regular,
+    SaveRegular,
 } from "@fluentui/react-icons";
 import {
     InlineCompletionCategory,
@@ -510,6 +511,7 @@ export const InlineCompletionDebugToolbar = ({
         openCustomPromptDialog,
         importSession,
         exportSession,
+        saveTraceNow,
         resetCustomPrompt,
         refreshSchemaContext,
     } = useInlineCompletionDebugContext();
@@ -1037,6 +1039,15 @@ export const InlineCompletionDebugToolbar = ({
                             blurActiveElementSoon();
                         }}>
                         Export JSON
+                    </Button>
+                    <Button
+                        appearance="primary"
+                        icon={<SaveRegular />}
+                        onClick={() => {
+                            saveTraceNow();
+                            blurActiveElementSoon();
+                        }}>
+                        Save trace now
                     </Button>
                 </Toolbar>
             </div>

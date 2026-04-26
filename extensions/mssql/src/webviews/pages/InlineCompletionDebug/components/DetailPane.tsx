@@ -112,8 +112,13 @@ type DetailTab =
 
 export const InlineCompletionDebugDetailPane = ({
     event,
+    onCopyEventPayload,
 }: {
     event: InlineCompletionDebugEvent | undefined;
+    onCopyEventPayload?: (
+        event: InlineCompletionDebugEvent,
+        kind: "systemPrompt" | "userPrompt" | "rawResponse" | "sanitizedResponse",
+    ) => void;
 }) => {
     const classes = useStyles();
     const { copyEventPayload } = useInlineCompletionDebugContext();
@@ -152,28 +157,44 @@ export const InlineCompletionDebugDetailPane = ({
                     <Button
                         className={classes.copyButton}
                         icon={<CopyRegular />}
-                        onClick={() => copyEventPayload(event.id, "systemPrompt")}>
+                        onClick={() =>
+                            onCopyEventPayload
+                                ? onCopyEventPayload(event, "systemPrompt")
+                                : copyEventPayload(event.id, "systemPrompt")
+                        }>
                         Copy
                     </Button>
                 ) : activeTab === "user" ? (
                     <Button
                         className={classes.copyButton}
                         icon={<CopyRegular />}
-                        onClick={() => copyEventPayload(event.id, "userPrompt")}>
+                        onClick={() =>
+                            onCopyEventPayload
+                                ? onCopyEventPayload(event, "userPrompt")
+                                : copyEventPayload(event.id, "userPrompt")
+                        }>
                         Copy
                     </Button>
                 ) : activeTab === "raw" ? (
                     <Button
                         className={classes.copyButton}
                         icon={<CopyRegular />}
-                        onClick={() => copyEventPayload(event.id, "rawResponse")}>
+                        onClick={() =>
+                            onCopyEventPayload
+                                ? onCopyEventPayload(event, "rawResponse")
+                                : copyEventPayload(event.id, "rawResponse")
+                        }>
                         Copy
                     </Button>
                 ) : activeTab === "sanitized" ? (
                     <Button
                         className={classes.copyButton}
                         icon={<CopyRegular />}
-                        onClick={() => copyEventPayload(event.id, "sanitizedResponse")}>
+                        onClick={() =>
+                            onCopyEventPayload
+                                ? onCopyEventPayload(event, "sanitizedResponse")
+                                : copyEventPayload(event.id, "sanitizedResponse")
+                        }>
                         Copy
                     </Button>
                 ) : null}

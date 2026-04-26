@@ -15,6 +15,7 @@ import {
     inlineCompletionCategories,
 } from "../../sharedInterfaces/inlineCompletionDebug";
 import { isInlineCompletionDebugProfileId } from "./inlineCompletionDebugProfiles";
+import { serializeSessionTrace } from "./traceSerializer";
 
 const DEFAULT_EVENT_CAPACITY = 500;
 const MAX_PROMPT_AND_SCHEMA_CHARS = 64 * 1024;
@@ -135,16 +136,23 @@ class InlineCompletionDebugStore {
 
     public exportSession(
         recordWhenClosed: boolean,
+        extensionVersion: string,
         customPromptLastSavedAt?: number,
+        options?: {
+            redactPrompts?: boolean;
+            maxFileSizeMB?: number;
+        },
     ): InlineCompletionDebugExportData {
-        return {
-            version: 1,
-            exportedAt: Date.now(),
-            overrides: this.getOverrides(),
-            recordWhenClosed,
-            customPromptLastSavedAt,
-            events: this.getEvents(),
-        };
+        return serializeSessionTrace(
+            this.getEvents(),
+            {
+                extensionVersion,
+                overrides: this.getOverrides(),
+                recordWhenClosed,
+                customPromptLastSavedAt,
+            },
+            options,
+        );
     }
 
     public setPanelOpen(isOpen: boolean): void {
