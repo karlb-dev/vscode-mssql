@@ -18,13 +18,16 @@ import {
 } from "./inlineCompletionDebug/inlineCompletionDebugProfiles";
 import { inlineCompletionDebugStore } from "./inlineCompletionDebug/inlineCompletionDebugStore";
 import { isInlineCompletionFeatureEnabled } from "./inlineCompletionFeatureGate";
+import { approximateTokenCount } from "./languageModels/shared/tokenApproximation";
 import {
     getConfiguredInlineCompletionModelVendors,
     matchLanguageModelChatToSelector,
     selectConfiguredLanguageModels,
 } from "./languageModelSelection";
 import {
+    getSqlInlineCompletionSchemaContextRuntimeSettings,
     SqlInlineCompletionSchemaContext,
+    SqlInlineCompletionSchemaContextRuntimeSettings,
     SqlInlineCompletionSchemaContextService,
     SqlInlineCompletionSchemaObject,
 } from "./sqlInlineCompletionSchemaContextService";
@@ -60,10 +63,11 @@ const statementInitiatingKeywordPattern =
 const statementInitiatingPostCommentPattern =
     /^\s*(?:select|with|insert|update|delete|merge|exec|execute|declare)\s*$/i;
 const instructionalIntentWordPattern =
-    /\b(?:write|give|get|show|list|find|return|display|compute|count|sum|report|select|fetch|query|retrieve|calculate|generate|estimate)\b/i;
-const questionStyleIntentPattern = /(?:^|\n)\s*(?:what|which|who|where|when|why|how)\b/i;
+    /\b(?:write|give|get|show|list|find|return|display|compute|count|sum|report|select|fetch|query|retrieve|calculate|generate|estimate|pull|extract|aggregate|summarize|top|dump|export|match|plot|compare|rank|bucket)\b/i;
+const questionStyleIntentPattern = /\b(?:what|which|who|where|when|why|how)\b/i;
+const trailingQuestionIntentPattern = /\?\s*$/;
 const metaResponseInsteadOfSqlPattern =
-    /^(?:i\b|i[' ]|sorry\b|cannot\b|can't\b|unable\b|however\b|there(?:'s| is)\b|the (?:document|query|statement|schema)\b|(?:this|that) (?:document|query|statement)\b|schema context\b|returning\b|not enough\b|insufficient\b|already (?:complete|done)\b|complete\b|done\b|no (?:further )?(?:completion|change|changes)\b)/i;
+    /^(?:i\b|i[' ]|sorry\b|cannot\b|can't\b|unable\b|however\b|sure\b|here(?:'s| is)\b|of course\b|note:?\b|note that\b|important:?\b|yes,?\b|okay,?\b|there(?:'s| is)\b|the (?:document|query|statement|schema)\b|(?:this|that) (?:document|query|statement)\b|schema context\b|returning\b|not enough\b|insufficient\b|already (?:complete|done)\b|complete\b|done\b|no (?:further )?(?:completion|change|changes)\b)/i;
 const emptyStringInstructionEchoPattern =
     /\b(?:return|returns|returning|emit|emits|output|outputs)\s+(?:exactly\s+)?(?:an?\s+)?(?:empty|string empty|empty string)\b/i;
 
@@ -79,6 +83,9 @@ interface InlineCompletionTelemetrySnapshot {
     inferredSystemQuery: boolean;
     completionCategory: InlineCompletionCategory;
     intentMode: boolean;
+    schemaBudgetProfile: string;
+    schemaSizeKind: string;
+    schemaDegradationStepCount: number;
 }
 
 export class SqlInlineCompletionProvider
@@ -140,6 +147,25 @@ export class SqlInlineCompletionProvider
         const profile = getInlineCompletionDebugPresetProfile(
             overrides.profileId ?? configuredProfileId,
         );
+        const debounceMsApplied =
+            triggerKind === vscode.InlineCompletionTriggerKind.Automatic
+                ? (overrides.debounceMs ?? profile?.debounceMs ?? automaticTriggerDebounceMs)
+                : 0;
+
+        if (
+            triggerKind === vscode.InlineCompletionTriggerKind.Automatic &&
+            overrides.allowAutomaticTriggers === false
+        ) {
+            return [];
+        }
+
+        if (triggerKind === vscode.InlineCompletionTriggerKind.Automatic) {
+            await delay(debounceMsApplied, token);
+            if (token.isCancellationRequested) {
+                return [];
+            }
+        }
+
         const line = document.lineAt(position.line);
         const linePrefix = line.text.slice(0, position.character);
         const lineSuffix = line.text.slice(position.character);
@@ -170,21 +196,11 @@ export class SqlInlineCompletionProvider
             intentMode ? intentModeMaxChars : maxCompletionChars,
             overrides.maxTokens ?? profile?.maxTokens,
         );
-        const debounceMsApplied =
-            triggerKind === vscode.InlineCompletionTriggerKind.Automatic
-                ? (overrides.debounceMs ?? profile?.debounceMs ?? automaticTriggerDebounceMs)
-                : 0;
         const useSchemaContext = overrides.useSchemaContext ?? this.getConfiguredUseSchemaContext();
         const shouldCaptureDebug = inlineCompletionDebugStore.shouldCapture(
             this.getRecordWhenClosedSetting(),
         );
-
-        if (
-            triggerKind === vscode.InlineCompletionTriggerKind.Automatic &&
-            overrides.allowAutomaticTriggers === false
-        ) {
-            return [];
-        }
+        let schemaContextSettings = getSqlInlineCompletionSchemaContextRuntimeSettings();
 
         if (!isInlineCompletionCategoryEnabled(completionCategory, enabledCategories)) {
             return [];
@@ -206,13 +222,6 @@ export class SqlInlineCompletionProvider
         let inputTokens: number | undefined;
         let outputTokens: number | undefined;
         let modelCallStarted = false;
-
-        if (triggerKind === vscode.InlineCompletionTriggerKind.Automatic) {
-            await delay(debounceMsApplied, token);
-            if (token.isCancellationRequested) {
-                return [];
-            }
-        }
 
         const modelStartedAt = Date.now();
         const recordDebugEvent = (
@@ -259,6 +268,7 @@ export class SqlInlineCompletionProvider
                     ...(overrides.enabledCategories !== null
                         ? { enabledCategories: overrides.enabledCategories }
                         : {}),
+                    ...(overrides.schemaContext ? { schemaContext: overrides.schemaContext } : {}),
                     customSystemPromptUsed: !!overrides.customSystemPrompt,
                 },
                 promptMessages: debugPromptMessages,
@@ -296,6 +306,12 @@ export class SqlInlineCompletionProvider
                     selectedModelName: selectedModel?.name,
                     selectedModelVersion: selectedModel?.version,
                     customSystemPromptActive: !!overrides.customSystemPrompt,
+                    schemaBudgetProfile: schemaContextSettings.budgetProfile,
+                    schemaSizeKind: schemaContext?.selectionMetadata?.schemaSizeKind,
+                    schemaDegradationSteps:
+                        schemaContext?.selectionMetadata?.degradationSteps.join(",") ?? "",
+                    schemaMessageOrder: schemaContextSettings.messageOrder,
+                    schemaContextChannel: schemaContextSettings.schemaContextChannel,
                 },
                 error: error
                     ? {
@@ -305,6 +321,21 @@ export class SqlInlineCompletionProvider
                       }
                     : undefined,
             });
+        };
+
+        const sendResultTelemetry = (
+            result: InlineCompletionResult,
+        ): InlineCompletionTelemetrySnapshot => {
+            const telemetrySnapshot = createInlineTelemetrySnapshot(
+                schemaContext,
+                selectedModel?.family,
+                modelStartedAt,
+                triggerKind,
+                inferredSystemQuery,
+                intentMode,
+            );
+            this.sendInlineCompletionTelemetry(result, telemetrySnapshot);
+            return telemetrySnapshot;
         };
 
         try {
@@ -325,6 +356,10 @@ export class SqlInlineCompletionProvider
                 recordDebugEvent("noModel");
                 return [];
             }
+
+            schemaContextSettings = getSqlInlineCompletionSchemaContextRuntimeSettings(
+                selectedModel.maxInputTokens,
+            );
 
             const canSendRequest: boolean | undefined =
                 this._context.languageModelAccessInformation?.canSendRequest(selectedModel);
@@ -350,6 +385,7 @@ export class SqlInlineCompletionProvider
                 schemaContext = await this._schemaContextService.getSchemaContext(
                     document,
                     statementPrefix,
+                    selectedModel.maxInputTokens,
                 );
             }
 
@@ -380,13 +416,67 @@ export class SqlInlineCompletionProvider
                 linePrefix,
                 lineSuffix,
                 schemaContextText,
+                messageOrder: schemaContextSettings.messageOrder,
+                schemaContextChannel: schemaContextSettings.schemaContextChannel,
             });
             debugPromptMessages = shouldCaptureDebug
                 ? promptMessages.map(toDebugPromptMessage)
                 : [];
-            inputTokens = shouldCaptureDebug
-                ? await countLanguageModelTokens(selectedModel, promptMessages, token)
+            const shouldCheckInputBudget = isFinitePositiveNumber(selectedModel.maxInputTokens);
+            let estimatedInputTokens = estimateLanguageModelTokens(promptMessages);
+            let budgetInputTokens: number | undefined = shouldCheckInputBudget
+                ? estimatedInputTokens
                 : undefined;
+            if (
+                shouldCaptureDebug ||
+                shouldCountPromptTokensForBudget(estimatedInputTokens, selectedModel.maxInputTokens)
+            ) {
+                inputTokens = await countLanguageModelTokens(selectedModel, promptMessages, token);
+                budgetInputTokens = inputTokens ?? budgetInputTokens;
+            }
+
+            if (
+                shouldCheckInputBudget &&
+                isPromptOverModelBudget(budgetInputTokens, selectedModel.maxInputTokens) &&
+                schemaContextText
+            ) {
+                schemaContextText = trimSchemaContextTextForModelBudget(
+                    schemaContextText,
+                    selectedModel.maxInputTokens,
+                    budgetInputTokens,
+                );
+                promptMessages = buildInlineCompletionPromptMessages({
+                    rulesText,
+                    intentMode,
+                    recentPrefix,
+                    statementPrefix,
+                    suffix,
+                    linePrefix,
+                    lineSuffix,
+                    schemaContextText,
+                    messageOrder: schemaContextSettings.messageOrder,
+                    schemaContextChannel: schemaContextSettings.schemaContextChannel,
+                });
+                debugPromptMessages = shouldCaptureDebug
+                    ? promptMessages.map(toDebugPromptMessage)
+                    : [];
+                estimatedInputTokens = estimateLanguageModelTokens(promptMessages);
+                budgetInputTokens = estimatedInputTokens;
+                if (
+                    shouldCaptureDebug ||
+                    shouldCountPromptTokensForBudget(
+                        estimatedInputTokens,
+                        selectedModel.maxInputTokens,
+                    )
+                ) {
+                    inputTokens = await countLanguageModelTokens(
+                        selectedModel,
+                        promptMessages,
+                        token,
+                    );
+                    budgetInputTokens = inputTokens ?? budgetInputTokens;
+                }
+            }
 
             modelCallStarted = true;
             const response = await selectedModel.sendRequest(
@@ -417,15 +507,7 @@ export class SqlInlineCompletionProvider
 
             if (!sanitizedText) {
                 const result = rawText.trim() ? "emptyFromSanitizer" : "emptyFromModel";
-                const telemetrySnapshot = createInlineTelemetrySnapshot(
-                    schemaContext,
-                    selectedModel.family,
-                    modelStartedAt,
-                    triggerKind,
-                    inferredSystemQuery,
-                    intentMode,
-                );
-                this.sendInlineCompletionTelemetry(result, telemetrySnapshot);
+                sendResultTelemetry(result);
                 recordDebugEvent(result);
                 return [];
             }
@@ -439,28 +521,12 @@ export class SqlInlineCompletionProvider
             finalCompletionText = suppressDocumentSuffixOverlap(finalCompletionText, suffix);
 
             if (!finalCompletionText) {
-                const telemetrySnapshot = createInlineTelemetrySnapshot(
-                    schemaContext,
-                    selectedModel.family,
-                    modelStartedAt,
-                    triggerKind,
-                    inferredSystemQuery,
-                    intentMode,
-                );
-                this.sendInlineCompletionTelemetry("emptyFromSanitizer", telemetrySnapshot);
+                sendResultTelemetry("emptyFromSanitizer");
                 recordDebugEvent("emptyFromSanitizer");
                 return [];
             }
 
-            const telemetrySnapshot = createInlineTelemetrySnapshot(
-                schemaContext,
-                selectedModel.family,
-                modelStartedAt,
-                triggerKind,
-                inferredSystemQuery,
-                intentMode,
-            );
-            this.sendInlineCompletionTelemetry("success", telemetrySnapshot);
+            const telemetrySnapshot = sendResultTelemetry("success");
             const storedEvent = recordDebugEvent("success");
 
             return [
@@ -484,15 +550,7 @@ export class SqlInlineCompletionProvider
 
             const errorMessage = getErrorMessage(error);
             this._logger.warn(`Inline completion request failed: ${errorMessage}`);
-            const telemetrySnapshot = createInlineTelemetrySnapshot(
-                schemaContext,
-                selectedModel?.family,
-                modelStartedAt,
-                triggerKind,
-                inferredSystemQuery,
-                intentMode,
-            );
-            this.sendInlineCompletionTelemetry("error", telemetrySnapshot);
+            sendResultTelemetry("error");
             sendErrorEvent(
                 TelemetryViews.MssqlCopilot,
                 TelemetryActions.InlineCompletion,
@@ -606,6 +664,11 @@ export class SqlInlineCompletionProvider
             inferredSystemQuery: (snapshot?.inferredSystemQuery ?? false).toString(),
             completionCategory: snapshot?.completionCategory ?? "unknown",
             intentMode: (snapshot?.intentMode ?? false).toString(),
+            schemaBudgetProfile: snapshot?.schemaBudgetProfile ?? "unknown",
+            schemaSizeKind: snapshot?.schemaSizeKind ?? "unknown",
+            schemaDegradationStepCountBucket: getCountBucket(
+                snapshot?.schemaDegradationStepCount ?? 0,
+            ),
         });
     }
 
@@ -676,22 +739,22 @@ export function buildCompletionRules(inferredSystemQuery: boolean, intentMode: b
 
 function buildSharedPreamble(inferredSystemQuery: boolean): string {
     return `Shared rules:
-- Use only the tables, views, columns, keys, and system objects listed in the schema context. Do not invent local database objects.
+- Use only the tables, views, procedures, functions, columns, parameters, keys, and system objects listed in the schema context. Do not invent local database objects.
 - Return no markdown, fences, backticks, quotes, labels, or explanations — raw SQL only.
 - If the schema context does not contain enough information to satisfy the request, return exactly an empty string. Do not explain why, apologize, mention missing schema context, emit placeholder text such as SELECT, or say that you are returning an empty string.
 - Empty string means emit no characters at all; never write prose such as "the document is complete", "done", or "return empty string".
 - The document suffix and current line suffix are authoritative context. Generate text that composes naturally with both; if no natural completion fits before the suffix, return exactly an empty string.
 - Use the recent document prefix to avoid repeating nearby declarations, CTE names, temp tables, aliases, or setup statements.
 - Prefer the simplest canonical query that satisfies the request. Do not add extra joins, columns, filters, aliases, or system objects unless the request or schema context requires them.
-- System affinity: inferredSystemQuery=${inferredSystemQuery ? "true" : "false"} — if true, prefer sys.* / INFORMATION_SCHEMA.* / DMV objects from the listed system objects; if false, prefer user tables.
+- System affinity: inferredSystemQuery=${inferredSystemQuery ? "true" : "false"} — if true, prefer sys.* / INFORMATION_SCHEMA.* / DMV objects from the listed system objects; if false, prefer user tables, views, procedures, and functions.
 - Prefer schema-qualified names.`;
 }
 
 function buildSchemaInventoryGuidance(): string {
     return `Inventory rules:
-- The schema context may include detailed TABLE / VIEW entries and compact TABLE NAMES / VIEW NAMES inventory entries. Columns and keys are known only for detailed TABLE / VIEW entries.
-- If an object appears only in TABLE NAMES or VIEW NAMES inventory, treat its columns as unknown. Use names-only objects only for broad discovery queries or simple SELECT * exploration.
-- If the request needs specific columns, joins, predicates, aggregates, or ordering on a names-only object, return exactly an empty string.`;
+- The schema context may include detailed TABLE / VIEW / PROCEDURE / FUNCTION entries and compact TABLE NAMES / VIEW NAMES / ROUTINE NAMES inventory entries. Columns, parameters, return columns, and keys are known only for detailed entries.
+- If an object appears only in a names-only inventory entry, treat its columns and parameters as unknown. Use names-only objects only for broad discovery queries, EXEC name exploration, or simple SELECT * exploration.
+- If the request needs specific columns, joins, predicates, aggregates, ordering, or routine arguments on a names-only object, return exactly an empty string.`;
 }
 
 function buildIntentModeRules(): string {
@@ -740,6 +803,8 @@ interface InlineCompletionPromptBuildOptions {
     linePrefix: string;
     lineSuffix: string;
     schemaContextText: string;
+    messageOrder?: SqlInlineCompletionSchemaContextRuntimeSettings["messageOrder"];
+    schemaContextChannel?: SqlInlineCompletionSchemaContextRuntimeSettings["schemaContextChannel"];
 }
 
 interface InlineCompletionPromptRuleOptions {
@@ -786,30 +851,56 @@ export function buildInlineCompletionPromptMessages(
 ): vscode.LanguageModelChatMessage[] {
     // VS Code LM API exposes only User and Assistant roles; there is no System role.
     // The rules message is sent as User because that is the only available channel.
-    return [
-        vscode.LanguageModelChatMessage.User(options.rulesText),
-        vscode.LanguageModelChatMessage.User(
-            `Mode: ${options.intentMode ? "intent (return complete query)" : "continuation (return one unit)"}
+    const schemaContextChannel = options.schemaContextChannel ?? "inline-with-data";
+    const dataMessage = buildPromptDataMessage(
+        options,
+        schemaContextChannel === "inline-with-data",
+    );
+    const messages =
+        (options.messageOrder ?? "rules-then-data") === "data-then-rules"
+            ? [
+                  vscode.LanguageModelChatMessage.User(dataMessage),
+                  vscode.LanguageModelChatMessage.User(options.rulesText),
+              ]
+            : [
+                  vscode.LanguageModelChatMessage.User(options.rulesText),
+                  vscode.LanguageModelChatMessage.User(dataMessage),
+              ];
 
-Recent document prefix:
-${options.recentPrefix}
+    if (schemaContextChannel === "separate-message") {
+        messages.push(
+            vscode.LanguageModelChatMessage.User(
+                `<schema_context>
+${options.schemaContextText}
+</schema_context>`,
+            ),
+        );
+    }
 
-Current statement prefix:
-${options.statementPrefix}
+    return messages;
+}
 
-Document suffix:
-${options.suffix}
-
-Current line prefix:
-${options.linePrefix}
-
-Current line suffix:
-${options.lineSuffix}
-
-Schema context:
-${options.schemaContextText}`,
-        ),
+function buildPromptDataMessage(
+    options: InlineCompletionPromptBuildOptions,
+    includeSchemaContext: boolean,
+): string {
+    const mode = options.intentMode
+        ? "intent (return complete query)"
+        : "continuation (return one unit)";
+    const parts = [
+        `<mode>${mode}</mode>`,
+        `<recent_document_prefix>\n${options.recentPrefix}\n</recent_document_prefix>`,
+        `<current_statement_prefix>\n${options.statementPrefix}\n</current_statement_prefix>`,
+        `<document_suffix>\n${options.suffix}\n</document_suffix>`,
+        `<current_line_prefix>\n${options.linePrefix}\n</current_line_prefix>`,
+        `<current_line_suffix>\n${options.lineSuffix}\n</current_line_suffix>`,
     ];
+
+    if (includeSchemaContext) {
+        parts.push(`<schema_context>\n${options.schemaContextText}\n</schema_context>`);
+    }
+
+    return parts.join("\n\n");
 }
 
 export function selectPreferredModel<
@@ -929,6 +1020,8 @@ export async function collectText(
 }
 
 export function createLanguageModelMaxTokenOptions(maxTokens: number): { [name: string]: number } {
+    // Keep both spellings because VS Code LM providers are not fully uniform: built-in
+    // providers use maxTokens, while some provider shims forward OpenAI-style max_tokens.
     return {
         maxTokens,
         max_tokens: maxTokens,
@@ -974,6 +1067,89 @@ async function countLanguageModelTokens(
     } catch {
         return undefined;
     }
+}
+
+function isFinitePositiveNumber(value: unknown): value is number {
+    return typeof value === "number" && Number.isFinite(value) && value > 0;
+}
+
+function isPromptOverModelBudget(
+    inputTokens: number | undefined,
+    maxInputTokens: number | undefined,
+): boolean {
+    return (
+        isFinitePositiveNumber(inputTokens) &&
+        isFinitePositiveNumber(maxInputTokens) &&
+        inputTokens > Math.floor(maxInputTokens * 0.9)
+    );
+}
+
+function shouldCountPromptTokensForBudget(
+    estimatedInputTokens: number,
+    maxInputTokens: number | undefined,
+): boolean {
+    return (
+        isFinitePositiveNumber(maxInputTokens) &&
+        estimatedInputTokens > Math.floor(maxInputTokens * 0.75)
+    );
+}
+
+function estimateLanguageModelTokens(
+    textOrMessages: string | vscode.LanguageModelChatMessage[],
+): number {
+    if (typeof textOrMessages === "string") {
+        return approximateTokenCount(textOrMessages);
+    }
+
+    return approximateTokenCount(textOrMessages.map(getLanguageModelMessageText).join("\n\n"));
+}
+
+function getLanguageModelMessageText(message: vscode.LanguageModelChatMessage): string {
+    return message.content
+        .map((part) => (part instanceof vscode.LanguageModelTextPart ? part.value : ""))
+        .join("");
+}
+
+function trimSchemaContextTextForModelBudget(
+    schemaContextText: string,
+    maxInputTokens: number | undefined,
+    inputTokens: number | undefined,
+): string {
+    if (!isFinitePositiveNumber(maxInputTokens) || !isFinitePositiveNumber(inputTokens)) {
+        return schemaContextText;
+    }
+
+    const usableInputTokens = Math.floor(maxInputTokens * 0.85);
+    const schemaTokenEstimate = Math.max(1, approximateTokenCount(schemaContextText));
+    const nonSchemaTokens = Math.max(0, inputTokens - schemaTokenEstimate);
+    const targetSchemaTokens = Math.max(128, usableInputTokens - nonSchemaTokens);
+    const targetChars = Math.max(
+        1024,
+        Math.min(schemaContextText.length, Math.floor(targetSchemaTokens * 4)),
+    );
+    return trimSchemaContextTextForPrompt(schemaContextText, targetChars);
+}
+
+function trimSchemaContextTextForPrompt(schemaContextText: string, targetChars: number): string {
+    if (schemaContextText.length <= targetChars) {
+        return schemaContextText;
+    }
+
+    const lines = schemaContextText.split("\n");
+    const selectedLines: string[] = [];
+    let length = 0;
+    for (const line of lines) {
+        if (length + line.length + 1 > targetChars) {
+            break;
+        }
+        selectedLines.push(line);
+        length += line.length + 1;
+    }
+
+    selectedLines.push(
+        "-- schema context truncated because the selected model has a smaller input window",
+    );
+    return selectedLines.join("\n");
 }
 
 function toDebugPromptMessage(
@@ -1162,6 +1338,7 @@ function isKnownDottedName(
     const objectNames = [
         ...context.tables.map((t) => t.name),
         ...context.views.map((v) => v.name),
+        ...(context.routines ?? []).map((r) => r.name),
         ...(context.systemObjects ?? []).map((o) => o.name),
         ...context.masterSymbols,
         ...context.schemas,
@@ -1383,6 +1560,7 @@ export function detectIntentComment(statementPrefix: string, linePrefix: string)
     }
 
     return (
+        trailingQuestionIntentPattern.test(intentComment.commentText) ||
         instructionalIntentWordPattern.test(intentComment.commentText) ||
         questionStyleIntentPattern.test(intentComment.commentText)
     );
@@ -1400,23 +1578,41 @@ export function sanitizeInlineCompletionText(
     linePrefix: string,
     intentMode: boolean,
 ): string | undefined {
-    let normalized = completionText.replace(/\r\n/g, "\n");
+    return sanitizeInlineCompletionTextWithOptions({
+        completionText,
+        maxChars,
+        linePrefix,
+        intentMode,
+    });
+}
+
+interface SanitizeInlineCompletionTextOptions {
+    completionText: string;
+    maxChars: number;
+    linePrefix: string;
+    intentMode: boolean;
+}
+
+function sanitizeInlineCompletionTextWithOptions(
+    options: SanitizeInlineCompletionTextOptions,
+): string | undefined {
+    let normalized = options.completionText.replace(/\r\n/g, "\n");
     normalized = stripMarkdownFences(normalized);
     normalized = stripModelPreamble(normalized);
-    normalized = unwrapSingleQuotedResponse(unwrapDoubleQuotedResponse(normalized));
-    normalized = intentMode ? normalized.trimEnd() : normalized.trim();
+    normalized = unwrapQuotedResponse(normalized);
+    normalized = options.intentMode ? normalized.trimEnd() : normalized.trim();
 
     if (isSentinelCompletion(normalized)) {
         return undefined;
     }
 
-    normalized = removeEchoedLinePrefix(normalized, linePrefix);
-    normalized = intentMode ? normalized.trimEnd() : normalized.trim();
+    normalized = removeEchoedLinePrefix(normalized, options.linePrefix);
+    normalized = options.intentMode ? normalized.trimEnd() : normalized.trim();
     if (isLikelyMetaResponseInsteadOfSql(normalized)) {
         return undefined;
     }
 
-    if (intentMode) {
+    if (options.intentMode) {
         normalized = stripTrailingStandaloneLineComment(normalized).trimEnd();
         if (isLikelyMetaResponseInsteadOfSql(normalized)) {
             return undefined;
@@ -1428,17 +1624,19 @@ export function sanitizeInlineCompletionText(
         }
     }
 
+    // The second sentinel pass intentionally catches model replies that only become
+    // empty-string sentinels after echo/preamble/meta cleanup above.
     if (isSentinelCompletion(normalized)) {
         return undefined;
     }
 
-    if (normalized.length <= maxChars) {
+    if (normalized.length <= options.maxChars) {
         return normalized;
     }
 
-    const candidate = normalized.slice(0, maxChars);
+    const candidate = normalized.slice(0, options.maxChars);
     const lastWhitespaceIndex = Math.max(candidate.lastIndexOf(" "), candidate.lastIndexOf("\n"));
-    if (lastWhitespaceIndex > Math.floor(maxChars / 2)) {
+    if (lastWhitespaceIndex > Math.floor(options.maxChars / 2)) {
         return candidate.slice(0, lastWhitespaceIndex).trimEnd();
     }
 
@@ -1451,21 +1649,38 @@ function stripMarkdownFences(text: string): string {
         return fencedBlock[1];
     }
 
-    return text.replace(/```(?:sql|tsql|sqlserver)?/gi, "").replace(/```/g, "");
+    const fenceLinePattern = /(^|\n)[ \t]*```(?:sql|tsql|sqlserver)?[ \t]*(?=\n|$)/gi;
+    const fenceMatches = [...text.matchAll(fenceLinePattern)];
+    if (fenceMatches.length < 2 || fenceMatches.length % 2 !== 0) {
+        return text;
+    }
+
+    return text.replace(fenceLinePattern, "$1");
 }
 
 function stripModelPreamble(text: string): string {
-    return text.replace(/^\s*(?:completion|insert text|ghost text)\s*:\s*/i, "");
+    return text.replace(
+        /^\s*(?:completion|insert text|ghost text|sql|query|answer|result|output)\s*:\s*/i,
+        "",
+    );
 }
 
-function unwrapDoubleQuotedResponse(text: string): string {
-    const match = /^"([\s\S]*)"$/.exec(text);
-    return match ? match[1] : text;
-}
+function unwrapQuotedResponse(text: string): string {
+    const trimmed = text.trim();
+    const quotePairs: Array<[string, string]> = [
+        ['"', '"'],
+        ["'", "'"],
+        ["\u201C", "\u201D"],
+        ["\u2018", "\u2019"],
+    ];
 
-function unwrapSingleQuotedResponse(text: string): string {
-    const match = /^'([\s\S]*)'$/.exec(text);
-    return match ? match[1] : text;
+    for (const [openQuote, closeQuote] of quotePairs) {
+        if (trimmed.startsWith(openQuote) && trimmed.endsWith(closeQuote)) {
+            return trimmed.slice(openQuote.length, trimmed.length - closeQuote.length);
+        }
+    }
+
+    return text;
 }
 
 function isSentinelCompletion(text: string): boolean {
@@ -1481,7 +1696,7 @@ function removeEchoedLinePrefix(completionText: string, linePrefix: string): str
     const trimmedLinePrefix = linePrefix.trim();
     const trimmedCompletion = completionText.trimStart();
 
-    if (trimmedLinePrefix.length < 6) {
+    if (trimmedLinePrefix.length < 3) {
         return completionText;
     }
 
@@ -1499,20 +1714,85 @@ function removeEchoedLinePrefix(completionText: string, linePrefix: string): str
 }
 
 function truncateAtInlineStop(text: string): string {
-    const stopIndexes = [text.indexOf("\n\n"), text.indexOf(";"), findLineCommentStop(text)].filter(
-        (index) => index >= 0,
-    );
+    const stopIndex = findInlineStopIndex(text);
 
-    if (stopIndexes.length === 0) {
+    if (stopIndex < 0) {
         return text;
     }
 
-    return text.slice(0, Math.min(...stopIndexes)).trimEnd();
+    return text.slice(0, stopIndex).trimEnd();
 }
 
-function findLineCommentStop(text: string): number {
-    const match = /(?:^|\s)--/.exec(text);
-    return match ? match.index : -1;
+function findInlineStopIndex(text: string): number {
+    let inSingleQuotedString = false;
+    let inDoubleQuotedString = false;
+    let inBracketIdentifier = false;
+
+    for (let index = 0; index < text.length; index++) {
+        const current = text[index];
+        const next = text[index + 1];
+
+        if (inSingleQuotedString) {
+            if (current === "'" && next === "'") {
+                index++;
+                continue;
+            }
+            if (current === "'") {
+                inSingleQuotedString = false;
+            }
+            continue;
+        }
+
+        if (inDoubleQuotedString) {
+            if (current === '"' && next === '"') {
+                index++;
+                continue;
+            }
+            if (current === '"') {
+                inDoubleQuotedString = false;
+            }
+            continue;
+        }
+
+        if (inBracketIdentifier) {
+            if (current === "]" && next === "]") {
+                index++;
+                continue;
+            }
+            if (current === "]") {
+                inBracketIdentifier = false;
+            }
+            continue;
+        }
+
+        if (current === "'") {
+            inSingleQuotedString = true;
+            continue;
+        }
+        if (current === '"') {
+            inDoubleQuotedString = true;
+            continue;
+        }
+        if (current === "[") {
+            inBracketIdentifier = true;
+            continue;
+        }
+
+        if (current === "\n" && next === "\n") {
+            return index;
+        }
+        if (current === ";") {
+            return index;
+        }
+        if (current === "-" && next === "-") {
+            return index;
+        }
+        if (current === "/" && next === "*") {
+            return index;
+        }
+    }
+
+    return -1;
 }
 
 function stripTrailingStandaloneLineComment(text: string): string {
@@ -1545,6 +1825,11 @@ function isLikelyMetaResponseInsteadOfSql(text: string): boolean {
     );
 }
 
+type SchemaContextSelectionMetadata = NonNullable<
+    SqlInlineCompletionSchemaContext["selectionMetadata"]
+>;
+type SchemaContextRoutine = NonNullable<SqlInlineCompletionSchemaContext["routines"]>[number];
+
 export function formatSchemaContextForPrompt(
     schemaContext: SqlInlineCompletionSchemaContext | undefined,
     inferredSystemQuery: boolean,
@@ -1553,6 +1838,8 @@ export function formatSchemaContextForPrompt(
         return "-- unavailable";
     }
 
+    const metadata = schemaContext.selectionMetadata;
+    const inventoryChunkSize = metadata?.inventoryChunkSize ?? 8;
     const lines: string[] = [];
     lines.push(
         `-- connection: ${schemaContext.server ?? "unknown server"} / ${
@@ -1567,12 +1854,29 @@ export function formatSchemaContextForPrompt(
         }`,
     );
 
+    if (metadata) {
+        lines.push(`-- ${metadata.schemaSizeSummary}`);
+        lines.push(
+            `-- schema budget: profile ${metadata.budgetProfile}, size ${metadata.schemaSizeKind}, columns ${metadata.columnRepresentation}, max prompt chars ${metadata.maxPromptChars}`,
+        );
+        if (metadata.degradationSteps.length > 0) {
+            lines.push(`-- schema compaction applied: ${metadata.degradationSteps.join(" -> ")}`);
+        }
+        if (metadata.schemaSizeKind === "outlier") {
+            lines.push(
+                "-- very large schema: only the most relevant names are shown. Be conservative and return an empty string when specific required columns or relationships are not shown.",
+            );
+        }
+    }
+
     if (schemaContext.schemas.length > 0) {
         lines.push(`-- schemas (user): ${schemaContext.schemas.join(", ")}`);
     }
 
     const tableInventory = schemaContext.tableNameOnlyInventory ?? [];
     const viewInventory = schemaContext.viewNameOnlyInventory ?? [];
+    const routineInventory = schemaContext.routineNameOnlyInventory ?? [];
+    const routines = schemaContext.routines ?? [];
     const totalTableCount = Math.max(
         schemaContext.totalTableCount ?? schemaContext.tables.length + tableInventory.length,
         schemaContext.tables.length + tableInventory.length,
@@ -1581,13 +1885,17 @@ export function formatSchemaContextForPrompt(
         schemaContext.totalViewCount ?? schemaContext.views.length + viewInventory.length,
         schemaContext.views.length + viewInventory.length,
     );
+    const totalRoutineCount = Math.max(
+        schemaContext.totalRoutineCount ?? routines.length + routineInventory.length,
+        routines.length + routineInventory.length,
+    );
 
     if (totalTableCount > schemaContext.tables.length) {
         lines.push(`-- user tables: detailed ${schemaContext.tables.length} of ${totalTableCount}`);
     }
 
     for (const table of schemaContext.tables) {
-        lines.push(`TABLE ${table.name} (${formatColumnsForPrompt(table)})`);
+        lines.push(`TABLE ${table.name} (${formatColumnsForPrompt(table, metadata)})`);
     }
 
     if (tableInventory.length > 0) {
@@ -1600,7 +1908,13 @@ export function formatSchemaContextForPrompt(
                 unlistedTableCount > 0 ? ` (${unlistedTableCount} more omitted)` : ""
             }:`,
         );
-        lines.push(...formatQualifiedNameInventoryForPrompt("TABLE NAMES", tableInventory));
+        lines.push(
+            ...formatQualifiedNameInventoryForPrompt(
+                "TABLE NAMES",
+                tableInventory,
+                inventoryChunkSize,
+            ),
+        );
     }
 
     if (totalViewCount > schemaContext.views.length) {
@@ -1608,7 +1922,7 @@ export function formatSchemaContextForPrompt(
     }
 
     for (const view of schemaContext.views) {
-        lines.push(`VIEW ${view.name} (${formatColumnsForPrompt(view)})`);
+        lines.push(`VIEW ${view.name} (${formatColumnsForPrompt(view, metadata)})`);
     }
 
     if (viewInventory.length > 0) {
@@ -1621,13 +1935,47 @@ export function formatSchemaContextForPrompt(
                 unlistedViewCount > 0 ? ` (${unlistedViewCount} more omitted)` : ""
             }:`,
         );
-        lines.push(...formatQualifiedNameInventoryForPrompt("VIEW NAMES", viewInventory));
+        lines.push(
+            ...formatQualifiedNameInventoryForPrompt(
+                "VIEW NAMES",
+                viewInventory,
+                inventoryChunkSize,
+            ),
+        );
+    }
+
+    if (routines.length > 0) {
+        if (totalRoutineCount > routines.length) {
+            lines.push(`-- user routines: detailed ${routines.length} of ${totalRoutineCount}`);
+        }
+        for (const routine of routines) {
+            lines.push(formatRoutineForPrompt(routine));
+        }
+    }
+
+    if (routineInventory.length > 0) {
+        const unlistedRoutineCount = Math.max(
+            0,
+            totalRoutineCount - routines.length - routineInventory.length,
+        );
+        lines.push(
+            `-- additional routines listed without parameters${
+                unlistedRoutineCount > 0 ? ` (${unlistedRoutineCount} more omitted)` : ""
+            }:`,
+        );
+        lines.push(
+            ...formatQualifiedNameInventoryForPrompt(
+                "ROUTINE NAMES",
+                routineInventory,
+                inventoryChunkSize,
+            ),
+        );
     }
 
     if ((schemaContext.systemObjects ?? []).length > 0) {
         lines.push("-- system catalog / DMVs available:");
         for (const object of schemaContext.systemObjects ?? []) {
-            lines.push(`${object.name} (${formatColumnsForPrompt(object)})`);
+            lines.push(`${object.name} (${formatColumnsForPrompt(object, metadata)})`);
         }
     }
 
@@ -1638,16 +1986,129 @@ export function formatSchemaContextForPrompt(
     return lines.join("\n");
 }
 
-function formatColumnsForPrompt(object: SqlInlineCompletionSchemaObject): string {
-    const columns = object.columnDefinitions?.length ? object.columnDefinitions : object.columns;
-    if (columns.length === 0) {
+function formatColumnsForPrompt(
+    object: SqlInlineCompletionSchemaObject,
+    metadata: SchemaContextSelectionMetadata | undefined,
+): string {
+    if (object.columns.length === 0) {
         return "columns unknown";
     }
 
-    return columns.map(sanitizePromptFragment).join(", ");
+    const representation = metadata?.columnRepresentation ?? "verbose";
+    if (representation === "compact") {
+        return formatColumnsCompactForPrompt(object);
+    }
+
+    const detailedColumns = object.columnDefinitions?.length
+        ? object.columnDefinitions
+        : object.columns;
+    if (representation === "types") {
+        return detailedColumns.map(stripColumnNullabilityForPrompt).join(", ");
+    }
+
+    return detailedColumns.map(sanitizePromptFragment).join(", ");
 }
 
-function formatQualifiedNameInventoryForPrompt(prefix: string, qualifiedNames: string[]): string[] {
+function formatColumnsCompactForPrompt(object: SqlInlineCompletionSchemaObject): string {
+    const primaryKeys = new Set(
+        (object.primaryKeyColumns ?? []).map((column) => column.toLowerCase()),
+    );
+    const foreignKeyByColumn = new Map<string, string>();
+    for (const foreignKey of object.foreignKeys ?? []) {
+        foreignKeyByColumn.set(
+            foreignKey.column.toLowerCase(),
+            `${foreignKey.referencedTable}.${foreignKey.referencedColumn}`,
+        );
+    }
+
+    return object.columns
+        .map((column) => {
+            const annotations: string[] = [];
+            if (primaryKeys.has(column.toLowerCase())) {
+                annotations.push("PK");
+            }
+            const foreignKeyTarget = foreignKeyByColumn.get(column.toLowerCase());
+            if (foreignKeyTarget) {
+                annotations.push(`FK->${foreignKeyTarget}`);
+            }
+            return annotations.length > 0
+                ? `${sanitizePromptFragment(column)} ${annotations.join(" ")}`
+                : sanitizePromptFragment(column);
+        })
+        .join(", ");
+}
+
+function stripColumnNullabilityForPrompt(definition: string): string {
+    return sanitizePromptFragment(definition)
+        .replace(/\s+NOT\s+NULL\b/gi, "")
+        .replace(/\s+NULL\b/gi, "")
+        .replace(/\s+COLLATE\s+\S+/gi, "")
+        .trim();
+}
+
+function formatRoutineForPrompt(routine: SchemaContextRoutine): string {
+    const routineKind = getRoutineKindForPrompt(routine.type);
+    const parameters = formatRoutineParametersForPrompt(routine);
+    const returns = formatRoutineReturnForPrompt(routine);
+    return `${routineKind} ${routine.name}(${parameters})${returns}`;
+}
+
+function getRoutineKindForPrompt(type: string | undefined): string {
+    switch ((type ?? "").toUpperCase()) {
+        case "P":
+        case "PC":
+            return "PROCEDURE";
+        case "IF":
+        case "TF":
+        case "FT":
+            return "TABLE FUNCTION";
+        case "FN":
+        case "FS":
+            return "SCALAR FUNCTION";
+        default:
+            return "ROUTINE";
+    }
+}
+
+function formatRoutineParametersForPrompt(routine: SchemaContextRoutine): string {
+    const parameters = routine.parameters ?? [];
+    if (parameters.length === 0) {
+        return "";
+    }
+
+    return parameters
+        .map((parameter) => {
+            if (parameter.definition) {
+                return sanitizePromptFragment(parameter.definition);
+            }
+
+            const parts = [sanitizePromptFragment(parameter.name)];
+            if (parameter.direction?.toUpperCase() === "OUTPUT") {
+                parts.push("OUTPUT");
+            }
+            return parts.join(" ");
+        })
+        .join(", ");
+}
+
+function formatRoutineReturnForPrompt(routine: SchemaContextRoutine): string {
+    const returnColumns = routine.returnColumns ?? [];
+    if (returnColumns.length > 0) {
+        return ` RETURNS TABLE (${returnColumns.map(sanitizePromptFragment).join(", ")})`;
+    }
+
+    if (routine.returnType) {
+        return ` RETURNS ${sanitizePromptFragment(routine.returnType)}`;
+    }
+
+    return "";
+}
+
+function formatQualifiedNameInventoryForPrompt(
+    prefix: string,
+    qualifiedNames: string[],
+    chunkSize: number = 8,
+): string[] {
     const namesBySchema = new Map<string, string[]>();
     for (const qualifiedName of qualifiedNames) {
         const [schemaName, objectName] = splitQualifiedName(qualifiedName);
@@ -1659,7 +2120,7 @@ function formatQualifiedNameInventoryForPrompt(prefix: string, qualifiedNames: s
 
     const lines: string[] = [];
     for (const [schemaName, objectNames] of namesBySchema) {
-        for (const chunk of chunkStrings(objectNames, 8)) {
+        for (const chunk of chunkStrings(objectNames, Math.max(1, chunkSize))) {
             if (schemaName) {
                 lines.push(`${prefix} ${schemaName} (${chunk.join(", ")})`);
                 continue;
@@ -1695,7 +2156,115 @@ function sanitizePromptFragment(value: string): string {
 }
 
 function inferSystemQuery(statementPrefix: string, linePrefix: string): boolean {
-    return /\b(?:sys|INFORMATION_SCHEMA)\s*\./i.test(`${statementPrefix}\n${linePrefix}`);
+    return /\b(?:sys|INFORMATION_SCHEMA)\s*\./i.test(
+        stripSqlCommentsAndStringLiterals(`${statementPrefix}\n${linePrefix}`),
+    );
+}
+
+function stripSqlCommentsAndStringLiterals(text: string): string {
+    let result = "";
+    let inSingleQuotedString = false;
+    let inDoubleQuotedString = false;
+    let inBracketIdentifier = false;
+    let inLineComment = false;
+    let inBlockComment = false;
+
+    for (let index = 0; index < text.length; index++) {
+        const current = text[index];
+        const next = text[index + 1];
+
+        if (inLineComment) {
+            if (current === "\n" || current === "\r") {
+                inLineComment = false;
+                result += current;
+            } else {
+                result += " ";
+            }
+            continue;
+        }
+
+        if (inBlockComment) {
+            if (current === "*" && next === "/") {
+                inBlockComment = false;
+                result += "  ";
+                index++;
+            } else {
+                result += current === "\n" || current === "\r" ? current : " ";
+            }
+            continue;
+        }
+
+        if (inSingleQuotedString) {
+            if (current === "'" && next === "'") {
+                result += "  ";
+                index++;
+                continue;
+            }
+            if (current === "'") {
+                inSingleQuotedString = false;
+            }
+            result += current === "\n" || current === "\r" ? current : " ";
+            continue;
+        }
+
+        if (inDoubleQuotedString) {
+            if (current === '"' && next === '"') {
+                result += "  ";
+                index++;
+                continue;
+            }
+            if (current === '"') {
+                inDoubleQuotedString = false;
+            }
+            result += current === "\n" || current === "\r" ? current : " ";
+            continue;
+        }
+
+        if (inBracketIdentifier) {
+            if (current === "]" && next === "]") {
+                result += "  ";
+                index++;
+                continue;
+            }
+            if (current === "]") {
+                inBracketIdentifier = false;
+            }
+            result += current;
+            continue;
+        }
+
+        if (current === "-" && next === "-") {
+            inLineComment = true;
+            result += "  ";
+            index++;
+            continue;
+        }
+        if (current === "/" && next === "*") {
+            inBlockComment = true;
+            result += "  ";
+            index++;
+            continue;
+        }
+        if (current === "'") {
+            inSingleQuotedString = true;
+            result += " ";
+            continue;
+        }
+        if (current === '"') {
+            inDoubleQuotedString = true;
+            result += " ";
+            continue;
+        }
+        if (current === "[") {
+            inBracketIdentifier = true;
+            result += current;
+            continue;
+        }
+
+        result += current;
+    }
+
+    return result;
 }
 
 function withInferredSystemQuery(
@@ -1735,6 +2304,9 @@ function createInlineTelemetrySnapshot(
         inferredSystemQuery,
         completionCategory: getInlineCompletionCategory(intentMode),
         intentMode,
+        schemaBudgetProfile: schemaContext?.selectionMetadata?.budgetProfile ?? "unknown",
+        schemaSizeKind: schemaContext?.selectionMetadata?.schemaSizeKind ?? "unknown",
+        schemaDegradationStepCount: schemaContext?.selectionMetadata?.degradationSteps.length ?? 0,
     };
 }
 

@@ -22,6 +22,23 @@ export const inlineCompletionDebugProfileIds = ["focused", "balanced", "broad", 
 
 export type InlineCompletionDebugProfileId = (typeof inlineCompletionDebugProfileIds)[number];
 
+export const inlineCompletionSchemaBudgetProfileIds = [
+    "tight",
+    "balanced",
+    "generous",
+    "unlimited",
+    "custom",
+] as const;
+
+export type InlineCompletionSchemaBudgetProfileId =
+    (typeof inlineCompletionSchemaBudgetProfileIds)[number];
+
+export type InlineCompletionSchemaColumnRepresentation = "compact" | "types" | "verbose";
+
+export type InlineCompletionSchemaPromptMessageOrder = "rules-then-data" | "data-then-rules";
+
+export type InlineCompletionSchemaContextChannel = "inline-with-data" | "separate-message";
+
 export interface InlineCompletionDebugProfileOption {
     id: InlineCompletionDebugProfileId;
     label: string;
@@ -40,7 +57,46 @@ export interface InlineCompletionDebugOverridesApplied {
     debounceMs?: number;
     maxTokens?: number;
     enabledCategories?: InlineCompletionCategory[];
+    schemaContext?: InlineCompletionDebugSchemaContextOverrides;
     customSystemPromptUsed: boolean;
+}
+
+export interface InlineCompletionDebugSchemaBudgetOverrides {
+    maxSchemas?: number;
+    maxTables?: number;
+    maxViews?: number;
+    maxRoutines?: number;
+    maxColumnsPerObject?: number;
+    maxForeignKeys?: number;
+    maxTableNameOnlyInventory?: number;
+    maxViewNameOnlyInventory?: number;
+    maxRoutineNameOnlyInventory?: number;
+    maxSystemObjects?: number;
+    maxSchemaContextRelevanceTerms?: number;
+    maxParametersPerRoutine?: number;
+    smallSchemaThreshold?: number;
+    largeSchemaThreshold?: number;
+    outlierSchemaThreshold?: number;
+    maxPromptChars?: number;
+    maxPromptTokens?: number;
+    foreignKeyExpansionDepth?: number;
+    foreignKeyExpansionObjectCap?: number;
+    columnNameRelevanceWeight?: number;
+    defaultSchemaWeight?: number;
+    cacheTtlMs?: number;
+    [key: string]: unknown;
+}
+
+export interface InlineCompletionDebugSchemaContextOverrides {
+    budgetProfile?: InlineCompletionSchemaBudgetProfileId;
+    schemaSizeAdaptive?: boolean;
+    includeRoutines?: boolean;
+    relevanceTermRecencyBias?: boolean;
+    columnRepresentation?: InlineCompletionSchemaColumnRepresentation;
+    messageOrder?: InlineCompletionSchemaPromptMessageOrder;
+    schemaContextChannel?: InlineCompletionSchemaContextChannel;
+    budgetOverrides?: InlineCompletionDebugSchemaBudgetOverrides;
+    [key: string]: unknown;
 }
 
 export interface InlineCompletionDebugEvent {
@@ -94,6 +150,7 @@ export interface InlineCompletionDebugOverrides {
     forceIntentMode: boolean | null;
     customSystemPrompt: string | null;
     allowAutomaticTriggers: boolean | null;
+    schemaContext?: InlineCompletionDebugSchemaContextOverrides | null;
 }
 
 export interface InlineCompletionDebugModelOption {
@@ -119,6 +176,7 @@ export interface InlineCompletionDebugDefaults {
     intentMaxTokens: number;
     enabledCategories: InlineCompletionCategory[];
     allowAutomaticTriggers: boolean;
+    schemaContext: InlineCompletionDebugSchemaContextOverrides | null;
 }
 
 export interface InlineCompletionDebugCustomPromptState {
@@ -159,6 +217,7 @@ export interface InlineCompletionDebugReducers {
         value: string;
     };
     resetCustomPrompt: Record<string, never>;
+    refreshSchemaContext: Record<string, never>;
     importSession: Record<string, never>;
     exportSession: Record<string, never>;
     replayEvent: {

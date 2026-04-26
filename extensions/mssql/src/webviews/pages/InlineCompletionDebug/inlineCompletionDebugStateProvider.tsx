@@ -21,6 +21,7 @@ export interface InlineCompletionDebugContextProps {
     closeCustomPromptDialog: () => void;
     saveCustomPrompt: (value: string) => void;
     resetCustomPrompt: () => void;
+    refreshSchemaContext: () => void;
     importSession: () => void;
     exportSession: () => void;
     replayEvent: (eventId: string) => void;
@@ -98,6 +99,10 @@ export const InlineCompletionDebugStateProvider = ({ children }: { children: Rea
         extensionRpc.action("resetCustomPrompt", {});
     }, [extensionRpc]);
 
+    const refreshSchemaContext = useCallback(() => {
+        extensionRpc.action("refreshSchemaContext", {});
+    }, [extensionRpc]);
+
     const importSession = useCallback(() => {
         extensionRpc.action("importSession", {});
     }, [extensionRpc]);
@@ -142,6 +147,7 @@ export const InlineCompletionDebugStateProvider = ({ children }: { children: Rea
                 closeCustomPromptDialog,
                 saveCustomPrompt,
                 resetCustomPrompt,
+                refreshSchemaContext,
                 importSession,
                 exportSession,
                 replayEvent,

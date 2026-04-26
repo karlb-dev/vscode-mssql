@@ -405,6 +405,7 @@ export default class MainController implements vscode.Disposable {
                 const controller = new InlineCompletionDebugController(
                     this._context,
                     this._vscodeWrapper,
+                    this.inlineCompletionSchemaContextService,
                 );
                 controller.onDisposed(() => {
                     if (this.inlineCompletionDebugController === controller) {

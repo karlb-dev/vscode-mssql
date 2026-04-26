@@ -66,6 +66,8 @@ export const cmdBackgroundTaskAction = "mssql.backgroundTaskAction";
 export const backgroundTaskLogUriScheme = "mssql-background-task-log";
 export const cmdNewQuery = "mssql.newQuery";
 export const cmdCopilotNewQueryWithConnection = "mssql.copilot.newQueryWithConnection";
+export const cmdCopilotInlineCompletionRefreshSchemaContext =
+    "mssql.copilot.inlineCompletion.refreshSchemaContext";
 export const cmdSchemaCompare = "mssql.schemaCompare";
 export const cmdTableExplorer = "mssql.tableExplorer";
 export const cmdSearchDatabase = "mssql.searchDatabase";
@@ -309,6 +311,8 @@ export const configAutoDisableNonTSqlLanguageService = "mssql.autoDisableNonTSql
 export const copilotDebugLogging = "mssql.copilotDebugLogging";
 export const configCopilotInlineCompletionsUseSchemaContext =
     "mssql.copilot.inlineCompletions.useSchemaContext";
+export const configCopilotInlineCompletionsSchemaContext =
+    "mssql.copilot.inlineCompletions.schemaContext";
 export const configCopilotInlineCompletionsProfile = "mssql.copilot.inlineCompletions.profile";
 export const configCopilotInlineCompletionsModelFamily =
     "mssql.copilot.inlineCompletions.modelFamily";

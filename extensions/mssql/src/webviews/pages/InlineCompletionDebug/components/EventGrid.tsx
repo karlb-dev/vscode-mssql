@@ -196,7 +196,7 @@ export const InlineCompletionDebugEventGrid = ({
                     { divider: true, command: "" },
                     {
                         command: "replay",
-                        title: "Replay this prompt with current overrides",
+                        title: "Replay with current overrides",
                         iconCssClass: "fi fi-arrow-sync",
                     },
                 ],

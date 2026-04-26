@@ -13,6 +13,7 @@ import {
     buildCompletionRules,
     detectIntentComment,
     intentModeMaxTokens,
+    sanitizeInlineCompletionText,
     SqlInlineCompletionProvider,
 } from "../../src/copilot/sqlInlineCompletionProvider";
 import { inlineCompletionDebugStore } from "../../src/copilot/inlineCompletionDebug/inlineCompletionDebugStore";
@@ -168,7 +169,7 @@ suite("SqlInlineCompletionProvider Tests", () => {
         expect(getMessageText(messages[0])).to.include(
             "Return only the text to insert at the cursor",
         );
-        expect(getMessageText(messages[1])).to.include("Current statement prefix:");
+        expect(getMessageText(messages[1])).to.include("<current_statement_prefix>");
     });
 
     test("falls back to prompting without schema context when metadata is unavailable", async () => {
@@ -189,7 +190,7 @@ suite("SqlInlineCompletionProvider Tests", () => {
         expect((items as vscode.InlineCompletionItem[])[0].insertText).to.equal("\nWHERE 1 = 1");
 
         const userMessageText = getMessageText(sendRequestStub.firstCall.args[0][1]);
-        expect(userMessageText).to.include("Schema context:\n-- unavailable");
+        expect(userMessageText).to.include("<schema_context>\n-- unavailable\n</schema_context>");
     });
 
     test("prepends a newline when the model omits it before a clause keyword", async () => {
@@ -379,12 +380,12 @@ suite("SqlInlineCompletionProvider Tests", () => {
 
         const userMessageText = getMessageText(sendRequestStub.firstCall.args[0][1]);
         expect(userMessageText).to.include(
-            "Recent document prefix:\nDECLARE @start_time datetime = DATEADD(DAY, -1, GETDATE());",
+            "<recent_document_prefix>\nDECLARE @start_time datetime = DATEADD(DAY, -1, GETDATE());",
         );
         expect(userMessageText).to.include(
-            "Current line prefix:\nDECLARE @end_time datetime = GETDATE(); ",
+            "<current_line_prefix>\nDECLARE @end_time datetime = GETDATE(); ",
         );
-        expect(userMessageText).to.include("Document suffix:");
+        expect(userMessageText).to.include("<document_suffix>");
         expect(userMessageText).to.include("SELECT\n    qs.sql_handle");
     });
 
@@ -495,6 +496,29 @@ ORDER BY qs.total_worker_time DESC;`,
         expect(event.inputTokens).to.equal(20);
         expect(event.outputTokens).to.equal(3);
         expect(event.completionCategory).to.equal("continuation");
+    });
+
+    test("skips exact token counting when a non-debug prompt is well under the model window", async () => {
+        schemaContextService.getSchemaContext.resolves(undefined);
+        (vscode.lm.selectChatModels as sinon.SinonStub).resolves([
+            {
+                sendRequest: sendRequestStub,
+                countTokens: countTokensStub,
+                maxInputTokens: 100000,
+            } as unknown as vscode.LanguageModelChat,
+        ]);
+
+        const items = await provider.provideInlineCompletionItems(
+            createTestDocument("SELECT *", "file:///query.sql"),
+            new vscode.Position(0, "SELECT *".length),
+            {
+                triggerKind: vscode.InlineCompletionTriggerKind.Invoke,
+            } as vscode.InlineCompletionContext,
+            { isCancellationRequested: false } as vscode.CancellationToken,
+        );
+
+        expect(items).to.have.lengthOf(1);
+        expect(countTokensStub).to.not.have.been.called;
     });
 
     test("returns no completions when no Copilot language model is available", async () => {
@@ -735,8 +759,12 @@ ORDER BY qs.total_worker_time DESC;`,
         expect(intentRules).to.include(
             "The document suffix and current line suffix are authoritative context",
         );
-        expect(intentRules).to.include("TABLE NAMES / VIEW NAMES inventory entries");
-        expect(intentRules).to.include("broad discovery queries or simple SELECT * exploration");
+        expect(intentRules).to.include(
+            "TABLE NAMES / VIEW NAMES / ROUTINE NAMES inventory entries",
+        );
+        expect(intentRules).to.include(
+            "broad discovery queries, EXEC name exploration, or simple SELECT * exploration",
+        );
         expect(intentRules).to.include("Prefer stable conventional formatting");
         expect(intentRules).to.include("canonical multiline layout");
         expect(intentRules).to.include("Prefer uppercase SQL keywords");
@@ -902,7 +930,7 @@ ORDER BY s.login_time DESC;`;
         const instructionText = getMessageText(sendRequestStub.firstCall.args[0][0]);
         const userMessageText = getMessageText(sendRequestStub.firstCall.args[0][1]);
         expect(instructionText).to.include("Return the complete SQL statement");
-        expect(userMessageText).to.include("Mode: intent (return complete query)");
+        expect(userMessageText).to.include("<mode>intent (return complete query)</mode>");
     });
 
     test("keeps valid intent-mode cached-plan DMV SQL", async () => {
@@ -936,6 +964,17 @@ ORDER BY qs.total_worker_time DESC;`;
 
         expect(items).to.have.lengthOf(1);
         expect((items as vscode.InlineCompletionItem[])[0].insertText).to.equal(cachedPlanQuery);
+    });
+
+    test("does not truncate continuation stops inside string literals", () => {
+        const sanitized = sanitizeInlineCompletionText(
+            "WHERE NoteText = 'line one\n\nline two'\n\nORDER BY CreatedAt",
+            200,
+            "SELECT * FROM dbo.Notes ",
+            false,
+        );
+
+        expect(sanitized).to.equal("WHERE NoteText = 'line one\n\nline two'");
     });
 
     test("returns no completion when intent mode produces an explanation instead of SQL", async () => {

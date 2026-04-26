@@ -11,6 +11,7 @@ import {
     InlineCompletionDebugOverrides,
     InlineCompletionDebugExportData,
     InlineCompletionDebugProfileId,
+    InlineCompletionDebugSchemaContextOverrides,
     inlineCompletionCategories,
 } from "../../sharedInterfaces/inlineCompletionDebug";
 import { isInlineCompletionDebugProfileId } from "./inlineCompletionDebugProfiles";
@@ -30,6 +31,7 @@ const defaultOverrides: InlineCompletionDebugOverrides = {
     forceIntentMode: null,
     customSystemPrompt: null,
     allowAutomaticTriggers: null,
+    schemaContext: null,
 };
 
 class InlineCompletionDebugStore {
@@ -52,6 +54,12 @@ class InlineCompletionDebugStore {
             ...normalizePartialOverrides(overrides),
         };
         this._onDidChange.fire();
+    }
+
+    public setSchemaContextOverride(
+        value: InlineCompletionDebugSchemaContextOverrides | null | undefined,
+    ): void {
+        this.updateOverrides({ schemaContext: value ?? null });
     }
 
     public replaceOverrides(overrides: InlineCompletionDebugOverrides): void {
@@ -212,6 +220,7 @@ function normalizeOverrides(
         forceIntentMode: normalizeNullableBoolean(overrides.forceIntentMode),
         customSystemPrompt: normalizeNullableString(overrides.customSystemPrompt, true),
         allowAutomaticTriggers: normalizeNullableBoolean(overrides.allowAutomaticTriggers),
+        schemaContext: normalizeNullableObject(overrides.schemaContext),
     };
 }
 
@@ -250,6 +259,9 @@ function normalizePartialOverrides(
         normalized.allowAutomaticTriggers = normalizeNullableBoolean(
             overrides.allowAutomaticTriggers,
         );
+    }
+    if (Object.prototype.hasOwnProperty.call(overrides, "schemaContext")) {
+        normalized.schemaContext = normalizeNullableObject(overrides.schemaContext);
     }
 
     return normalized;
@@ -319,6 +331,54 @@ function normalizeNullableCompletionCategories(
     }
 
     return inlineCompletionCategories.filter((category) => enabled.has(category));
+}
+
+function normalizeNullableObject(
+    value: unknown,
+): InlineCompletionDebugSchemaContextOverrides | null {
+    if (!isRecord(value)) {
+        return null;
+    }
+
+    return normalizeJsonRecord(value);
+}
+
+function normalizeJsonRecord(
+    value: Record<string, unknown>,
+): InlineCompletionDebugSchemaContextOverrides {
+    const normalized: InlineCompletionDebugSchemaContextOverrides = {};
+    for (const [key, rawValue] of Object.entries(value)) {
+        const normalizedValue = normalizeJsonValue(rawValue);
+        if (normalizedValue !== undefined) {
+            normalized[key] = normalizedValue;
+        }
+    }
+    return normalized;
+}
+
+function normalizeJsonValue(value: unknown): unknown {
+    if (
+        value === null ||
+        typeof value === "string" ||
+        typeof value === "number" ||
+        typeof value === "boolean"
+    ) {
+        return value;
+    }
+
+    if (Array.isArray(value)) {
+        return value.map((item) => normalizeJsonValue(item)).filter((item) => item !== undefined);
+    }
+
+    if (isRecord(value)) {
+        return normalizeJsonRecord(value);
+    }
+
+    return undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === "object" && value !== null;
 }
 
 function truncateToBudget(
