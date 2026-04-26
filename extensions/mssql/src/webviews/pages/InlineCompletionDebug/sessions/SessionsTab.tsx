@@ -25,7 +25,6 @@ import {
     ChevronDown16Regular,
     ChevronLeft16Regular,
     ChevronRight16Regular,
-    DatabaseLinkRegular,
     FolderOpenRegular,
 } from "@fluentui/react-icons";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
@@ -58,6 +57,7 @@ import { useInlineCompletionDebugContext } from "../inlineCompletionDebugStatePr
 import { useInlineCompletionDebugSelector } from "../inlineCompletionDebugSelector";
 import { InlineCompletionDebugEventGrid } from "../components/EventGrid";
 import { InlineCompletionDebugDetailPane } from "../components/DetailPane";
+import { ReplayCartButton } from "../components/ReplayCartButton";
 
 const dimensions: Array<{ key: InlineCompletionAnalysisDimension; label: string }> = [
     { key: "model", label: "Model" },
@@ -70,6 +70,10 @@ const dimensions: Array<{ key: InlineCompletionAnalysisDimension; label: string 
     { key: "language", label: "Language" },
     { key: "inferredSystemQuery", label: "System query" },
     { key: "completionCategory", label: "Completion kind" },
+    { key: "replayRun", label: "Replay run" },
+    { key: "replayMatrixCell", label: "Matrix cell" },
+    { key: "replaySourceEvent", label: "Replay source" },
+    { key: "replayTrace", label: "Replay trace" },
 ];
 
 const chartMargin = { top: 0, right: 8, bottom: 0, left: 0 };
@@ -136,7 +140,7 @@ const useStyles = makeStyles({
     },
     datasetTable: {
         display: "grid",
-        gridTemplateColumns: "34px minmax(280px, 1fr) 180px 72px 82px 108px 108px",
+        gridTemplateColumns: "34px minmax(260px, 1fr) 180px 72px 82px 108px 108px 152px",
         maxHeight: "176px",
         overflowY: "auto",
         ...shorthands.borderTop("1px", "solid", "var(--vscode-panel-border)"),
@@ -316,9 +320,22 @@ const useStyles = makeStyles({
         gap: "6px",
     },
     compactButton: {
+        flexShrink: 1,
         height: "28px",
-        minWidth: "auto",
+        minWidth: 0,
+        maxWidth: "136px",
+        overflowX: "hidden",
+        whiteSpace: "nowrap",
         ...shorthands.padding("0", "8px"),
+        "& .fui-Button__icon": {
+            flexShrink: 0,
+        },
+        "& .fui-Button__content": {
+            minWidth: 0,
+            overflowX: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+        },
     },
     pivotMeta: {
         color: "var(--vscode-descriptionForeground)",
@@ -509,6 +526,7 @@ export function SessionsTab({ active }: { active: boolean }) {
         sessionsAddFile,
         sessionsChangeFolder,
         replaySessionEvent,
+        addEventsToReplayCart,
     } = useInlineCompletionDebugContext();
     const [filters, setFilters] = useState<InlineCompletionAnalysisFilters>({});
     const [primaryDimension, setPrimaryDimension] =
@@ -551,6 +569,7 @@ export function SessionsTab({ active }: { active: boolean }) {
     );
     const sessionEventDataset = useMemo(() => {
         const eventKeys = new WeakMap<InlineCompletionDebugEvent, string>();
+        const eventSources = new WeakMap<InlineCompletionDebugEvent, string>();
         const sessionEvents: InlineCompletionDebugEvent[] = [];
 
         for (const loaded of sessions.loadedTraces) {
@@ -559,12 +578,24 @@ export function SessionsTab({ active }: { active: boolean }) {
             }
 
             loaded.trace.events.forEach((event, index) => {
-                eventKeys.set(event, createSessionEventKey(loaded.fileKey, event.id, index));
-                sessionEvents.push(event);
+                const sourceLabel = loaded.trace._savedAt ?? loaded.fileKey;
+                const eventWithSource: InlineCompletionDebugEvent = {
+                    ...event,
+                    locals: {
+                        ...event.locals,
+                        replaySessionSourceLabel: sourceLabel,
+                    },
+                };
+                eventKeys.set(
+                    eventWithSource,
+                    createSessionEventKey(loaded.fileKey, event.id, index),
+                );
+                eventSources.set(eventWithSource, sourceLabel);
+                sessionEvents.push(eventWithSource);
             });
         }
 
-        return { events: sessionEvents, eventKeys };
+        return { events: sessionEvents, eventKeys, eventSources };
     }, [includedFileKeys, sessions.loadedTraces]);
     const events = sessionEventDataset.events;
     const getSessionEventKey = useCallback(
@@ -646,6 +677,20 @@ export function SessionsTab({ active }: { active: boolean }) {
             },
         }));
     }, []);
+    const addSessionEventsToReplayCart = useCallback(
+        (eventsToAdd: InlineCompletionDebugEvent[]) => {
+            addEventsToReplayCart(
+                eventsToAdd.map((event) => ({
+                    event,
+                    sourceLabel:
+                        asString(event.locals.replaySessionSourceLabel) ??
+                        sessionEventDataset.eventSources.get(event) ??
+                        "Sessions",
+                })),
+            );
+        },
+        [addEventsToReplayCart, sessionEventDataset],
+    );
 
     return (
         <div className={classes.root}>
@@ -789,6 +834,9 @@ export function SessionsTab({ active }: { active: boolean }) {
                                                     resizeToken={gridResizeToken}
                                                     onCopyEventPayload={copySessionEventPayload}
                                                     onReplayEvent={replaySessionEvent}
+                                                    onAddEventsToReplayCart={
+                                                        addSessionEventsToReplayCart
+                                                    }
                                                     showReplay={true}
                                                     getEventKey={getSessionEventKey}
                                                 />
@@ -836,7 +884,6 @@ function DatasetSelector({
     onSetAllTraces: (included: boolean) => void;
 }) {
     const classes = useStyles();
-    const { sessionsSyncToDatabase } = useInlineCompletionDebugContext();
     const [fileListOpen, setFileListOpen] = useState(false);
     const included = entries.filter((entry) => entry.included);
     const eventCount = included.reduce((sum, entry) => sum + entry.eventCount, 0);
@@ -868,6 +915,7 @@ function DatasetSelector({
                         {included.length}/{entries.length} traces · {eventCount.toLocaleString()}{" "}
                         events{range ? ` · ${range}` : ""}
                     </Text>
+                    <ReplayCartButton />
                     <div className={classes.traceToggleActions}>
                         <FluentTooltip content="Select all traces" relationship="label">
                             <Button
@@ -912,21 +960,11 @@ function DatasetSelector({
                         onClick={onAddFile}>
                         Add file
                     </Button>
-                    <FluentTooltip content="Coming soon" relationship="label">
-                        <Button
-                            className={classes.compactButton}
-                            icon={<DatabaseLinkRegular />}
-                            size="small"
-                            disabled
-                            onClick={sessionsSyncToDatabase}>
-                            Sync to DB
-                        </Button>
-                    </FluentTooltip>
                 </div>
             </div>
             {fileListOpen ? (
                 <div className={classes.datasetTable}>
-                    {["", "Filename", "Saved", "Events", "Size", "Profile", "Schema"].map(
+                    {["", "Filename", "Saved", "Events", "Size", "Profile", "Schema", "Replay"].map(
                         (label) => (
                             <div
                                 key={label || "checkbox"}
@@ -952,6 +990,7 @@ function TraceRow({
     onToggleTrace: (fileKey: string, included: boolean) => void;
 }) {
     const classes = useStyles();
+    const { addSessionToReplayCart, replaySessionNow } = useInlineCompletionDebugContext();
     return (
         <>
             <div className={classes.datasetCell}>
@@ -962,7 +1001,11 @@ function TraceRow({
             </div>
             <div
                 className={mergeClasses(classes.datasetCell, classes.mono, classes.truncate)}
-                title={entry.loadError ?? entry.path}>
+                title={entry.loadError ?? `${entry.path} (right-click to add to replay trace)`}
+                onContextMenu={(event) => {
+                    event.preventDefault();
+                    addSessionToReplayCart(entry.fileKey);
+                }}>
                 {entry.filename}
             </div>
             <div className={mergeClasses(classes.datasetCell, classes.mono, classes.savedCell)}>
@@ -979,6 +1022,24 @@ function TraceRow({
             </div>
             <div className={mergeClasses(classes.datasetCell, classes.truncate)}>
                 {entry.schemaMode ?? entry.schemaSizeKind ?? "--"}
+            </div>
+            <div className={classes.datasetCell}>
+                <div className={classes.traceToggleActions}>
+                    <Button
+                        className={classes.compactButton}
+                        size="small"
+                        disabled={entry.eventCount === 0}
+                        onClick={() => addSessionToReplayCart(entry.fileKey)}>
+                        Add
+                    </Button>
+                    <Button
+                        className={classes.compactButton}
+                        size="small"
+                        disabled={entry.eventCount === 0}
+                        onClick={() => replaySessionNow(entry.fileKey)}>
+                        Run
+                    </Button>
+                </div>
             </div>
         </>
     );
@@ -1086,7 +1147,7 @@ function FilterRail({
                     </FluentTooltip>
                 </div>
             </div>
-            {dimensions.slice(0, 9).map((dimension) => (
+            {dimensions.map((dimension) => (
                 <Facet
                     key={dimension.key}
                     dimension={dimension.key}
@@ -1538,6 +1599,14 @@ function getSelectedFacetValues(
             return (filters.inferredSystemQuery ?? []).map((value) => (value ? "yes" : "no"));
         case "completionCategory":
             return [];
+        case "replayTrace":
+            return filters.replayTraces ?? [];
+        case "replayRun":
+            return filters.replayRuns ?? [];
+        case "replayMatrixCell":
+            return filters.replayMatrixCells ?? [];
+        case "replaySourceEvent":
+            return filters.replaySourceEvents ?? [];
     }
 }
 
@@ -1565,6 +1634,14 @@ function getFilterKey(
             return "inferredSystemQuery";
         case "completionCategory":
             return undefined;
+        case "replayTrace":
+            return "replayTraces";
+        case "replayRun":
+            return "replayRuns";
+        case "replayMatrixCell":
+            return "replayMatrixCells";
+        case "replaySourceEvent":
+            return "replaySourceEvents";
     }
 }
 
@@ -1751,6 +1828,10 @@ function formatDuration(value: number): string {
 
 function formatPercent(value: number): string {
     return `${(value * 100).toFixed(1)}%`;
+}
+
+function asString(value: unknown): string | undefined {
+    return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
 function formatCompact(value: number): string {

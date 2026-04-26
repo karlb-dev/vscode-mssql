@@ -47,6 +47,7 @@ import {
     inlineCompletionSchemaBudgetProfileIds,
 } from "../../../../sharedInterfaces/inlineCompletionDebug";
 import { useInlineCompletionDebugContext } from "../inlineCompletionDebugStateProvider";
+import { ReplayCartButton } from "./ReplayCartButton";
 
 type SchemaSectionId = "shape" | "size" | "caps" | "prompt" | "weights" | "cache" | "assembly";
 
@@ -88,7 +89,7 @@ interface SchemaNumberControl {
     step?: number;
 }
 
-const schemaProfileOptions: readonly {
+export const schemaProfileOptions: readonly {
     id: InlineCompletionSchemaBudgetProfileId;
     label: string;
     description: string;
@@ -1305,6 +1306,7 @@ export const InlineCompletionDebugToolbar = ({
                 <span className={classes.toolbarSeparator} />
 
                 <div className={classes.actionCluster} aria-label="Inline completion debug imports">
+                    <ReplayCartButton />
                     <Tooltip content="Import JSON session" relationship="label">
                         <Button
                             aria-label="Import JSON session"

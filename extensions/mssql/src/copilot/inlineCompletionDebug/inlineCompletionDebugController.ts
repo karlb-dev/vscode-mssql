@@ -62,13 +62,24 @@ import { inlineCompletionDebugStore } from "./inlineCompletionDebugStore";
 import {
     InlineCompletionCategory,
     InlineCompletionDebugEvent,
+    InlineCompletionDebugEventTags,
     InlineCompletionDebugModelOption,
     InlineCompletionDebugOverrides,
     InlineCompletionDebugProfileId,
+    InlineCompletionDebugReplayCartAddItem,
+    InlineCompletionDebugReplayCartConfigMode,
+    InlineCompletionDebugReplayConfig,
+    InlineCompletionDebugReplayEventSnapshot,
+    InlineCompletionDebugReplayMatrixCell,
+    InlineCompletionDebugReplayQueueRow,
+    InlineCompletionDebugReplayRun,
+    InlineCompletionDebugReplayState,
     InlineCompletionDebugSchemaContextOverrides,
     InlineCompletionDebugSessionsState,
     InlineCompletionDebugWebviewState,
     InlineCompletionDebugReducers,
+    InlineCompletionSchemaBudgetProfileId,
+    inlineCompletionCategories,
 } from "../../sharedInterfaces/inlineCompletionDebug";
 
 export const INLINE_COMPLETION_DEBUG_CUSTOM_PROMPT_MEMENTO_KEY =
@@ -96,6 +107,13 @@ export class InlineCompletionDebugController extends WebviewPanelController<
     private _savedCustomPromptValue: string | null;
     private _customPromptLastSavedAt: number | undefined;
     private _sessionsState: InlineCompletionDebugSessionsState;
+    private _replayState: InlineCompletionDebugReplayState = createEmptyReplayState();
+    private _replayCartDialogSnapshot: InlineCompletionDebugReplayEventSnapshot[] | undefined;
+    private _replaySnapshotCounter = 0;
+    private _replayTraceCounter = 0;
+    private _replayRunCounter = 0;
+    private _replayQueueCounter = 0;
+    private _replayDrainActive = false;
     private _traceFolderWatcher: vscode.FileSystemWatcher | undefined;
 
     constructor(
@@ -123,6 +141,7 @@ export class InlineCompletionDebugController extends WebviewPanelController<
                 availableModels: [],
                 effectiveDefaultModelOption: undefined,
                 sessions: createEmptySessionsState(getConfiguredTraceFolder(_extensionContext)),
+                replay: createEmptyReplayState(),
                 selectedEventId: undefined,
                 customPromptDialogOpen: false,
                 customPromptValue: savedCustomPrompt,
@@ -138,6 +157,7 @@ export class InlineCompletionDebugController extends WebviewPanelController<
         this._savedCustomPromptValue = savedCustomPrompt;
         this._customPromptLastSavedAt = savedCustomPromptAt;
         this._sessionsState = createEmptySessionsState(getConfiguredTraceFolder(_extensionContext));
+        this._replayState = this.state.replay;
         inlineCompletionDebugStore.setPanelOpen(true);
         this.registerDisposables();
         this.registerReducers();
@@ -419,6 +439,152 @@ export class InlineCompletionDebugController extends WebviewPanelController<
                 customPromptDialogOpen: state.customPrompt.dialogOpen,
             });
         });
+
+        this.registerReducer("openReplayBuilder", (state) => {
+            this._replayCartDialogSnapshot = cloneJson(this._replayState.cart);
+            this.updateReplayState({
+                ...this._replayState,
+                builderOpen: true,
+            });
+            return this.createState({
+                selectedEventId: state.selectedEventId,
+                customPromptDialogOpen: state.customPrompt.dialogOpen,
+            });
+        });
+
+        this.registerReducer("closeReplayBuilder", (state, payload) => {
+            const restoredCart =
+                payload.restoreCart && this._replayCartDialogSnapshot
+                    ? cloneJson(this._replayCartDialogSnapshot)
+                    : this._replayState.cart;
+            this._replayCartDialogSnapshot = undefined;
+            this.updateReplayState({
+                ...this._replayState,
+                builderOpen: false,
+                cart: restoredCart,
+            });
+            return this.createState({
+                selectedEventId: state.selectedEventId,
+                customPromptDialogOpen: state.customPrompt.dialogOpen,
+            });
+        });
+
+        this.registerReducer("addEventsToReplayCart", (state, payload) => {
+            this.addEventsToReplayCart(payload.items);
+            return this.createState({
+                selectedEventId: state.selectedEventId,
+                customPromptDialogOpen: state.customPrompt.dialogOpen,
+            });
+        });
+
+        this.registerReducer("addSessionToReplayCart", async (state, payload) => {
+            await this.addSessionToReplayCart(payload.fileKey);
+            return this.createState({
+                selectedEventId: state.selectedEventId,
+                customPromptDialogOpen: state.customPrompt.dialogOpen,
+            });
+        });
+
+        this.registerReducer("replaySessionNow", async (state, payload) => {
+            await this.replaySessionNow(payload.fileKey);
+            return this.createState({
+                selectedEventId: state.selectedEventId,
+                customPromptDialogOpen: state.customPrompt.dialogOpen,
+            });
+        });
+
+        this.registerReducer("removeFromReplayCart", (state, payload) => {
+            this.updateReplayState({
+                ...this._replayState,
+                cart: this._replayState.cart.filter((item) => item.id !== payload.snapshotId),
+            });
+            return this.createState({
+                selectedEventId: state.selectedEventId,
+                customPromptDialogOpen: state.customPrompt.dialogOpen,
+            });
+        });
+
+        this.registerReducer("reorderReplayCart", (state, payload) => {
+            this.updateReplayState({
+                ...this._replayState,
+                cart: moveReplayCartItem(
+                    this._replayState.cart,
+                    payload.fromIndex,
+                    payload.toIndex,
+                ),
+            });
+            return this.createState({
+                selectedEventId: state.selectedEventId,
+                customPromptDialogOpen: state.customPrompt.dialogOpen,
+            });
+        });
+
+        this.registerReducer("clearReplayCart", (state) => {
+            this.updateReplayState({
+                ...this._replayState,
+                cart: [],
+            });
+            return this.createState({
+                selectedEventId: state.selectedEventId,
+                customPromptDialogOpen: state.customPrompt.dialogOpen,
+            });
+        });
+
+        this.registerReducer("reverseReplayCart", (state) => {
+            this.updateReplayState({
+                ...this._replayState,
+                cart: [...this._replayState.cart].reverse(),
+            });
+            return this.createState({
+                selectedEventId: state.selectedEventId,
+                customPromptDialogOpen: state.customPrompt.dialogOpen,
+            });
+        });
+
+        this.registerReducer("setReplayCartOverride", (state, payload) => {
+            this.updateReplayCartSnapshot(payload.snapshotId, {
+                override: payload.override ? cloneJson(payload.override) : null,
+                configMode: payload.override ? "override" : "snapshot",
+            });
+            return this.createState({
+                selectedEventId: state.selectedEventId,
+                customPromptDialogOpen: state.customPrompt.dialogOpen,
+            });
+        });
+
+        this.registerReducer("setReplayCartConfigMode", (state, payload) => {
+            this.updateReplayCartSnapshot(payload.snapshotId, {
+                configMode: payload.configMode,
+            });
+            return this.createState({
+                selectedEventId: state.selectedEventId,
+                customPromptDialogOpen: state.customPrompt.dialogOpen,
+            });
+        });
+
+        this.registerReducer("queueReplayCart", (state, payload) => {
+            this.queueReplayCart(payload.configMode);
+            return this.createState({
+                selectedEventId: state.selectedEventId,
+                customPromptDialogOpen: state.customPrompt.dialogOpen,
+            });
+        });
+
+        this.registerReducer("runReplayMatrix", (state, payload) => {
+            this.runReplayMatrix(payload.profileIds, payload.schemaBudgetProfileIds);
+            return this.createState({
+                selectedEventId: state.selectedEventId,
+                customPromptDialogOpen: state.customPrompt.dialogOpen,
+            });
+        });
+
+        this.registerReducer("cancelReplayRun", (state, payload) => {
+            this.cancelReplayRun(payload.runId);
+            return this.createState({
+                selectedEventId: state.selectedEventId,
+                customPromptDialogOpen: state.customPrompt.dialogOpen,
+            });
+        });
     }
 
     private createState(
@@ -436,6 +602,7 @@ export class InlineCompletionDebugController extends WebviewPanelController<
             availableModels: this._availableModels,
             effectiveDefaultModelOption: this._effectiveDefaultModelOption,
             sessions: this._sessionsState,
+            replay: this._replayState,
             selectedEventId: overrides?.selectedEventId ?? this.state?.selectedEventId,
             customPromptDialogOpen:
                 overrides?.customPromptDialogOpen ?? this.state?.customPrompt.dialogOpen ?? false,
@@ -900,6 +1067,495 @@ export class InlineCompletionDebugController extends WebviewPanelController<
         await vscode.env.clipboard.writeText(text);
     }
 
+    private addEventsToReplayCart(items: InlineCompletionDebugReplayCartAddItem[]): void {
+        const snapshots = items
+            .filter((item) => item.event.result !== "pending" && item.event.result !== "queued")
+            .map((item) => this.createReplaySnapshot(item.event, item.sourceLabel));
+        if (snapshots.length === 0) {
+            return;
+        }
+
+        this.updateReplayState({
+            ...this._replayState,
+            cart: [...this._replayState.cart, ...snapshots],
+            lastAddedAt: Date.now(),
+        });
+    }
+
+    private async addSessionToReplayCart(fileKey: string): Promise<void> {
+        const loaded = await this.getLoadedTrace(fileKey);
+        if (!loaded) {
+            return;
+        }
+
+        this.addEventsToReplayCart(
+            loaded.trace.events.map((event) => ({
+                event,
+                sourceLabel: loaded.trace._savedAt
+                    ? `${loaded.trace._savedAt} · ${loaded.trace.events.length} events`
+                    : fileKey,
+            })),
+        );
+    }
+
+    private async replaySessionNow(fileKey: string): Promise<void> {
+        const loaded = await this.getLoadedTrace(fileKey);
+        if (!loaded) {
+            return;
+        }
+
+        const snapshots = loaded.trace.events
+            .filter((event) => event.result !== "pending" && event.result !== "queued")
+            .map((event) => ({
+                ...this.createReplaySnapshot(
+                    event,
+                    loaded.trace._savedAt
+                        ? `${loaded.trace._savedAt} · ${loaded.trace.events.length} events`
+                        : fileKey,
+                ),
+                configMode: "live" as const,
+                override: null,
+            }));
+        this.queueReplaySnapshots(snapshots, "single");
+    }
+
+    private async getLoadedTrace(
+        fileKey: string,
+    ): Promise<InlineCompletionDebugSessionsState["loadedTraces"][number] | undefined> {
+        const cached = this._sessionsState.loadedTraces.find((trace) => trace.fileKey === fileKey);
+        if (cached) {
+            return cached;
+        }
+
+        const entry = this._sessionsState.traceIndex.find((trace) => trace.fileKey === fileKey);
+        if (!entry || entry.loadError) {
+            return undefined;
+        }
+
+        try {
+            const trace = await loadTraceFile(entry.path);
+            const loaded = { fileKey, trace };
+            this._sessionsState = {
+                ...this._sessionsState,
+                loadedTraces: dedupeLoadedTraces([...this._sessionsState.loadedTraces, loaded]),
+                traceIndex: this._sessionsState.traceIndex.map((item) =>
+                    item.fileKey === fileKey ? { ...item, loaded: true } : item,
+                ),
+            };
+            return loaded;
+        } catch (error) {
+            this._sessionsState = {
+                ...this._sessionsState,
+                traceIndex: this._sessionsState.traceIndex.map((item) =>
+                    item.fileKey === fileKey
+                        ? { ...item, loaded: false, loadError: getErrorMessage(error) }
+                        : item,
+                ),
+            };
+            return undefined;
+        }
+    }
+
+    private updateReplayCartSnapshot(
+        snapshotId: string,
+        update: Partial<Pick<InlineCompletionDebugReplayEventSnapshot, "configMode" | "override">>,
+    ): void {
+        this.updateReplayState({
+            ...this._replayState,
+            cart: this._replayState.cart.map((snapshot) =>
+                snapshot.id === snapshotId
+                    ? {
+                          ...snapshot,
+                          ...update,
+                      }
+                    : snapshot,
+            ),
+        });
+    }
+
+    private createReplaySnapshot(
+        event: InlineCompletionDebugEvent,
+        sourceLabel: string | undefined,
+    ): InlineCompletionDebugReplayEventSnapshot {
+        return {
+            id: `snapshot-${++this._replaySnapshotCounter}`,
+            sourceEventId: event.id,
+            sourceLabel: sourceLabel ?? `Live · ${formatReplayTime(event.timestamp)}`,
+            capturedAt: Date.now(),
+            event: cloneJson(event),
+            capturedConfig: this.createCapturedReplayConfig(event),
+            configMode: "snapshot",
+            override: null,
+        };
+    }
+
+    private createCapturedReplayConfig(
+        event: InlineCompletionDebugEvent,
+    ): InlineCompletionDebugReplayConfig {
+        const current = this.getCurrentReplayConfig();
+        const schemaBudgetProfile = getSchemaBudgetProfileId(
+            event.overridesApplied.schemaContext?.budgetProfile ?? event.locals.schemaBudgetProfile,
+        );
+        const eventModelSelector = this.getEventModelSelector(event);
+        return compactReplayConfig({
+            ...current,
+            profileId:
+                getInlineCompletionDebugProfileId(
+                    event.overridesApplied.profileId ?? event.locals.profileId,
+                ) ?? current.profileId,
+            modelSelector: event.overridesApplied.modelSelector ?? eventModelSelector,
+            continuationModelSelector:
+                event.overridesApplied.continuationModelSelector ??
+                current.continuationModelSelector,
+            useSchemaContext: event.overridesApplied.useSchemaContext ?? current.useSchemaContext,
+            debounceMs: event.overridesApplied.debounceMs ?? current.debounceMs,
+            maxTokens: event.overridesApplied.maxTokens ?? current.maxTokens,
+            enabledCategories: event.overridesApplied.enabledCategories
+                ? [...event.overridesApplied.enabledCategories]
+                : current.enabledCategories,
+            schemaContext:
+                cloneJson(event.overridesApplied.schemaContext) ??
+                (schemaBudgetProfile
+                    ? { budgetProfile: schemaBudgetProfile }
+                    : current.schemaContext),
+        });
+    }
+
+    private getEventModelSelector(event: InlineCompletionDebugEvent): string | null {
+        if (event.modelVendor && event.modelId) {
+            const selector = `${event.modelVendor}/${event.modelId}`;
+            if (this._availableModels.some((model) => model.selector === selector)) {
+                return selector;
+            }
+        }
+
+        if (event.modelFamily) {
+            return (
+                this._availableModels.find((model) => model.family === event.modelFamily)
+                    ?.selector ?? null
+            );
+        }
+
+        return null;
+    }
+
+    private getCurrentReplayConfig(): InlineCompletionDebugReplayConfig {
+        return compactReplayConfig(inlineCompletionDebugStore.getOverrides());
+    }
+
+    private queueReplayCart(configMode?: InlineCompletionDebugReplayCartConfigMode): void {
+        this.queueReplaySnapshots(this._replayState.cart, "single", [], configMode);
+    }
+
+    private runReplayMatrix(
+        profileIds: InlineCompletionDebugProfileId[],
+        schemaBudgetProfileIds: InlineCompletionSchemaBudgetProfileId[],
+    ): void {
+        const profiles = profileIds
+            .map((profileId) => ({
+                id: profileId,
+                label:
+                    inlineCompletionDebugProfileOptions.find((profile) => profile.id === profileId)
+                        ?.label ?? profileId,
+            }))
+            .filter((profile) => profile.id !== inlineCompletionDebugCustomProfileId);
+        const schemaProfiles = schemaBudgetProfileIds
+            .map((schemaBudgetProfileId) => ({
+                id: schemaBudgetProfileId,
+                label: getSchemaBudgetProfileLabel(schemaBudgetProfileId),
+            }))
+            .filter((schema) => schema.id !== "custom");
+        if (profiles.length === 0 || schemaProfiles.length === 0) {
+            return;
+        }
+
+        const cells: InlineCompletionDebugReplayMatrixCell[] = [];
+        for (const profile of profiles) {
+            for (const schema of schemaProfiles) {
+                cells.push({
+                    profileId: profile.id,
+                    profileLabel: profile.label,
+                    schemaBudgetProfileId: schema.id,
+                    schemaLabel: schema.label,
+                    cellId: `cell-${cells.length + 1}`,
+                    ordinal: cells.length + 1,
+                });
+            }
+        }
+
+        this.queueReplaySnapshots(this._replayState.cart, "matrix", cells);
+    }
+
+    private queueReplaySnapshots(
+        snapshots: InlineCompletionDebugReplayEventSnapshot[],
+        kind: InlineCompletionDebugReplayRun["kind"],
+        matrixCells: InlineCompletionDebugReplayMatrixCell[] = [],
+        configMode?: InlineCompletionDebugReplayCartConfigMode,
+    ): void {
+        const runnableSnapshots = snapshots.filter(
+            (snapshot) => snapshot.event.result !== "pending" && snapshot.event.result !== "queued",
+        );
+        if (runnableSnapshots.length === 0) {
+            return;
+        }
+
+        const traceId = `trace-${new Date().toISOString().replace(/[:.]/g, "-")}-${++this
+            ._replayTraceCounter}`;
+        const runId = `run-${new Date().toISOString().replace(/[:.]/g, "-")}-${++this
+            ._replayRunCounter}`;
+        const cells = kind === "matrix" ? matrixCells : [];
+        const total = (cells.length || 1) * runnableSnapshots.length;
+        const startedAt = Date.now();
+        const run: InlineCompletionDebugReplayRun = {
+            id: runId,
+            traceId,
+            kind,
+            startedAt,
+            status: "queued",
+            totalEvents: total,
+            completedEvents: 0,
+            matrixCells: cells.length > 0 ? cells : undefined,
+        };
+        let runPosition = 0;
+        const queueRows =
+            kind === "matrix"
+                ? cells.flatMap((cell) =>
+                      runnableSnapshots.map((snapshot) =>
+                          this.createReplayQueueRow(snapshot, run, ++runPosition, total, cell),
+                      ),
+                  )
+                : runnableSnapshots.map((snapshot) =>
+                      this.createReplayQueueRow(
+                          snapshot,
+                          run,
+                          ++runPosition,
+                          total,
+                          undefined,
+                          configMode,
+                      ),
+                  );
+
+        this.updateReplayState({
+            ...this._replayState,
+            runs: [...this._replayState.runs, run],
+            queueRows: [...this._replayState.queueRows, ...queueRows],
+            activeRunId: this._replayState.activeRunId ?? run.id,
+            builderOpen: false,
+        });
+        this.startReplayQueueDrain();
+    }
+
+    private createReplayQueueRow(
+        snapshot: InlineCompletionDebugReplayEventSnapshot,
+        run: InlineCompletionDebugReplayRun,
+        position: number,
+        total: number,
+        matrixCell: InlineCompletionDebugReplayMatrixCell | undefined,
+        configMode?: InlineCompletionDebugReplayCartConfigMode,
+    ): InlineCompletionDebugReplayQueueRow {
+        this._replayQueueCounter++;
+        const config = matrixCell
+            ? this.resolveMatrixCellConfig(matrixCell)
+            : this.resolveSnapshotReplayConfig(snapshot, configMode);
+        return {
+            id: `queue-${this._replayQueueCounter}`,
+            runId: run.id,
+            traceId: run.traceId,
+            snapshotId: snapshot.id,
+            sourceEventId: snapshot.sourceEventId,
+            position,
+            total,
+            status: "queued",
+            queuedAt: Date.now(),
+            config,
+            matrixCellId: matrixCell?.cellId,
+            matrixCellLabel: matrixCell
+                ? `${matrixCell.profileLabel} x ${matrixCell.schemaLabel}`
+                : undefined,
+            event: createQueuedReplayEvent(snapshot, config, run, position, total, matrixCell),
+        };
+    }
+
+    private resolveSnapshotReplayConfig(
+        snapshot: InlineCompletionDebugReplayEventSnapshot,
+        configModeOverride?: InlineCompletionDebugReplayCartConfigMode,
+    ): InlineCompletionDebugReplayConfig {
+        const configMode = configModeOverride ?? snapshot.configMode;
+        if (configMode === "live") {
+            return this.getCurrentReplayConfig();
+        }
+
+        return compactReplayConfig({
+            ...snapshot.capturedConfig,
+            ...(configMode === "override" ? compactPartialReplayConfig(snapshot.override) : {}),
+        });
+    }
+
+    private resolveMatrixCellConfig(
+        matrixCell: InlineCompletionDebugReplayMatrixCell,
+    ): InlineCompletionDebugReplayConfig {
+        return compactReplayConfig({
+            ...this.getCurrentReplayConfig(),
+            ...createInlineCompletionDebugPresetOverrides(matrixCell.profileId),
+            profileId: matrixCell.profileId,
+            schemaContext: {
+                budgetProfile: matrixCell.schemaBudgetProfileId,
+            },
+        });
+    }
+
+    private startReplayQueueDrain(): void {
+        if (this._replayDrainActive) {
+            return;
+        }
+
+        this._replayDrainActive = true;
+        void this.drainReplayQueue();
+    }
+
+    private async drainReplayQueue(): Promise<void> {
+        try {
+            while (!this.isDisposed) {
+                const nextRow = this._replayState.queueRows[0];
+                if (!nextRow) {
+                    this.updateReplayState({
+                        ...this._replayState,
+                        activeRunId: undefined,
+                    });
+                    return;
+                }
+
+                const run = this._replayState.runs.find((item) => item.id === nextRow.runId);
+                if (!run) {
+                    this.updateReplayState({
+                        ...this._replayState,
+                        queueRows: this._replayState.queueRows.slice(1),
+                    });
+                    continue;
+                }
+
+                const startedAt = Date.now();
+                this.updateReplayState({
+                    ...this._replayState,
+                    activeRunId: run.id,
+                    runs: this._replayState.runs.map((item) =>
+                        item.id === run.id
+                            ? {
+                                  ...item,
+                                  status: item.status === "cancelled" ? "cancelled" : "running",
+                                  activeMatrixCellId: nextRow.matrixCellId,
+                              }
+                            : item,
+                    ),
+                    queueRows: this._replayState.queueRows.map((item) =>
+                        item.id === nextRow.id
+                            ? {
+                                  ...item,
+                                  status: "running",
+                                  startedAt,
+                                  event: {
+                                      ...item.event,
+                                      timestamp: startedAt,
+                                      result: "pending",
+                                  },
+                              }
+                            : item,
+                    ),
+                });
+
+                const tags = this.createReplayEventTags(nextRow);
+                await this.replaySourceEvent(nextRow.event, {
+                    overrides: nextRow.config,
+                    tags,
+                });
+
+                this.completeReplayQueueRow(nextRow);
+            }
+        } finally {
+            this._replayDrainActive = false;
+            if (!this.isDisposed && this._replayState.queueRows.length > 0) {
+                this.startReplayQueueDrain();
+            }
+        }
+    }
+
+    private completeReplayQueueRow(row: InlineCompletionDebugReplayQueueRow): void {
+        const currentRun = this._replayState.runs.find((run) => run.id === row.runId);
+        const completedEvents = (currentRun?.completedEvents ?? 0) + 1;
+        const remainingRows = this._replayState.queueRows.filter((item) => item.id !== row.id);
+        const runHasQueuedRows = remainingRows.some((item) => item.runId === row.runId);
+        const updatedRuns = this._replayState.runs.map((run) => {
+            if (run.id !== row.runId) {
+                return run;
+            }
+
+            const status: InlineCompletionDebugReplayRun["status"] =
+                run.status === "cancelled"
+                    ? "cancelled"
+                    : runHasQueuedRows
+                      ? "running"
+                      : "completed";
+            return {
+                ...run,
+                completedEvents,
+                status,
+                activeMatrixCellId: runHasQueuedRows ? run.activeMatrixCellId : undefined,
+                completedAt: runHasQueuedRows ? run.completedAt : Date.now(),
+            };
+        });
+
+        this.updateReplayState({
+            ...this._replayState,
+            queueRows: remainingRows,
+            runs: updatedRuns,
+            activeRunId: remainingRows[0]?.runId,
+        });
+    }
+
+    private cancelReplayRun(runId: string | undefined): void {
+        const effectiveRunId = runId ?? this._replayState.activeRunId;
+        if (!effectiveRunId) {
+            return;
+        }
+
+        const remainingRows = this._replayState.queueRows.filter(
+            (row) => row.runId !== effectiveRunId || row.status === "running",
+        );
+        const hasRunningRow = remainingRows.some((row) => row.runId === effectiveRunId);
+        this.updateReplayState({
+            ...this._replayState,
+            queueRows: remainingRows,
+            activeRunId: remainingRows[0]?.runId,
+            runs: this._replayState.runs.map((run) =>
+                run.id === effectiveRunId
+                    ? {
+                          ...run,
+                          status: "cancelled",
+                          completedAt: hasRunningRow ? run.completedAt : Date.now(),
+                      }
+                    : run,
+            ),
+        });
+    }
+
+    private createReplayEventTags(
+        row: InlineCompletionDebugReplayQueueRow,
+    ): InlineCompletionDebugEventTags {
+        return {
+            replayTraceId: row.traceId,
+            replayRunId: row.runId,
+            ...(row.matrixCellId ? { replayMatrixCellId: row.matrixCellId } : {}),
+            replaySourceEventId: row.sourceEventId,
+        };
+    }
+
+    private updateReplayState(next: InlineCompletionDebugReplayState): void {
+        this._replayState = next;
+        if (!this.isDisposed) {
+            this.updateState(this.createState());
+        }
+    }
+
     private async replayEvent(eventId: string): Promise<void> {
         const sourceEvent = inlineCompletionDebugStore.getEvent(eventId);
         if (!sourceEvent) {
@@ -909,8 +1565,16 @@ export class InlineCompletionDebugController extends WebviewPanelController<
         await this.replaySourceEvent(sourceEvent);
     }
 
-    private async replaySourceEvent(sourceEvent: InlineCompletionDebugEvent): Promise<void> {
-        const overrides = inlineCompletionDebugStore.getOverrides();
+    private async replaySourceEvent(
+        sourceEvent: InlineCompletionDebugEvent,
+        options: {
+            overrides?: InlineCompletionDebugReplayConfig;
+            tags?: InlineCompletionDebugEventTags;
+        } = {},
+    ): Promise<InlineCompletionDebugEvent | undefined> {
+        const overrides = options.overrides ?? inlineCompletionDebugStore.getOverrides();
+        const tags = options.tags;
+        const replayTagLocals = getReplayTagLocals(tags, sourceEvent.id);
         const profile = getInlineCompletionDebugPresetProfile(overrides.profileId);
         const linePrefix = asString(sourceEvent.locals.linePrefix);
         const lineSuffix = asString(sourceEvent.locals.lineSuffix);
@@ -929,7 +1593,7 @@ export class InlineCompletionDebugController extends WebviewPanelController<
             profile?.modelPreference,
         );
         if (!selectedModel) {
-            inlineCompletionDebugStore.addEvent({
+            return inlineCompletionDebugStore.addEvent({
                 ...cloneBaseEvent(sourceEvent),
                 timestamp: Date.now(),
                 completionCategory,
@@ -949,20 +1613,20 @@ export class InlineCompletionDebugController extends WebviewPanelController<
                 sanitizedResponse: undefined,
                 finalCompletionText: undefined,
                 schemaContextFormatted: sourceEvent.schemaContextFormatted,
+                tags,
                 locals: {
                     ...sourceEvent.locals,
                     completionCategory,
                     intentMode,
-                    replaySourceEventId: sourceEvent.id,
+                    ...replayTagLocals,
                 },
             });
-            return;
         }
 
         const canSendRequest =
             this._extensionContext.languageModelAccessInformation?.canSendRequest(selectedModel);
         if (canSendRequest === false) {
-            inlineCompletionDebugStore.addEvent({
+            return inlineCompletionDebugStore.addEvent({
                 ...cloneBaseEvent(sourceEvent),
                 timestamp: Date.now(),
                 completionCategory,
@@ -982,25 +1646,27 @@ export class InlineCompletionDebugController extends WebviewPanelController<
                 sanitizedResponse: undefined,
                 finalCompletionText: undefined,
                 schemaContextFormatted: sourceEvent.schemaContextFormatted,
+                tags,
                 locals: {
                     ...sourceEvent.locals,
                     completionCategory,
                     intentMode,
-                    replaySourceEventId: sourceEvent.id,
+                    ...replayTagLocals,
                 },
             });
-            return;
         }
 
         const useSchemaContext = overrides.useSchemaContext ?? getConfiguredUseSchemaContext();
         const schemaContextSettings = getSqlInlineCompletionSchemaContextRuntimeSettings(
             selectedModel.maxInputTokens,
+            overrides.schemaContext,
         );
         const replaySchemaContext = useSchemaContext
             ? await this.getReplaySchemaContext(
                   sourceEvent,
                   statementPrefix,
                   selectedModel.maxInputTokens,
+                  overrides.schemaContext,
               )
             : {
                   schemaContext: undefined,
@@ -1086,7 +1752,7 @@ export class InlineCompletionDebugController extends WebviewPanelController<
                   ? "success"
                   : "emptyFromSanitizer";
 
-            inlineCompletionDebugStore.addEvent({
+            return inlineCompletionDebugStore.addEvent({
                 ...cloneBaseEvent(sourceEvent),
                 timestamp: Date.now(),
                 completionCategory,
@@ -1121,6 +1787,7 @@ export class InlineCompletionDebugController extends WebviewPanelController<
                     useSchemaContext && schemaContextText !== "-- unavailable"
                         ? schemaContextText
                         : undefined,
+                tags,
                 locals: {
                     ...sourceEvent.locals,
                     profileId: overrides.profileId,
@@ -1128,7 +1795,7 @@ export class InlineCompletionDebugController extends WebviewPanelController<
                     intentMode,
                     useSchemaContext,
                     effectiveMaxTokens: maxTokens,
-                    replaySourceEventId: sourceEvent.id,
+                    ...replayTagLocals,
                     replaySchemaContextSource: replaySchemaContext.schemaContextSource,
                     schemaBudgetProfile: schemaContextSettings.budgetProfile,
                     schemaSizeKind:
@@ -1143,7 +1810,7 @@ export class InlineCompletionDebugController extends WebviewPanelController<
                 },
             });
         } catch (error) {
-            inlineCompletionDebugStore.addEvent({
+            return inlineCompletionDebugStore.addEvent({
                 ...cloneBaseEvent(sourceEvent),
                 timestamp: Date.now(),
                 completionCategory,
@@ -1178,6 +1845,7 @@ export class InlineCompletionDebugController extends WebviewPanelController<
                     useSchemaContext && schemaContextText !== "-- unavailable"
                         ? schemaContextText
                         : undefined,
+                tags,
                 locals: {
                     ...sourceEvent.locals,
                     profileId: overrides.profileId,
@@ -1185,7 +1853,7 @@ export class InlineCompletionDebugController extends WebviewPanelController<
                     intentMode,
                     useSchemaContext,
                     effectiveMaxTokens: maxTokens,
-                    replaySourceEventId: sourceEvent.id,
+                    ...replayTagLocals,
                     replaySchemaContextSource: replaySchemaContext.schemaContextSource,
                     schemaBudgetProfile: schemaContextSettings.budgetProfile,
                     schemaSizeKind:
@@ -1213,6 +1881,7 @@ export class InlineCompletionDebugController extends WebviewPanelController<
         sourceEvent: InlineCompletionDebugEvent,
         statementPrefix: string,
         modelMaxInputTokens: number | undefined,
+        schemaContextOverrides: InlineCompletionDebugSchemaContextOverrides | null | undefined,
     ): Promise<ReplaySchemaContextResult> {
         if (this._schemaContextService) {
             try {
@@ -1221,6 +1890,7 @@ export class InlineCompletionDebugController extends WebviewPanelController<
                         sourceEvent.documentUri,
                         statementPrefix,
                         modelMaxInputTokens,
+                        schemaContextOverrides,
                     );
                 if (refreshedContext) {
                     const schemaContext = {
@@ -1293,6 +1963,7 @@ function createState(options: {
     availableModels: InlineCompletionDebugModelOption[];
     effectiveDefaultModelOption: InlineCompletionDebugModelOption | undefined;
     sessions: InlineCompletionDebugSessionsState;
+    replay: InlineCompletionDebugReplayState;
     selectedEventId: string | undefined;
     customPromptDialogOpen: boolean;
     customPromptValue: string | null;
@@ -1351,6 +2022,16 @@ function createState(options: {
             lastSavedAt: options.customPromptLastSavedAt,
         },
         sessions: options.sessions,
+        replay: options.replay,
+    };
+}
+
+function createEmptyReplayState(): InlineCompletionDebugReplayState {
+    return {
+        cart: [],
+        runs: [],
+        queueRows: [],
+        builderOpen: false,
     };
 }
 
@@ -1545,8 +2226,189 @@ function asString(value: unknown): string {
     return typeof value === "string" ? value : "";
 }
 
+function cloneJson<T>(value: T): T {
+    if (value === undefined) {
+        return value;
+    }
+    return JSON.parse(JSON.stringify(value)) as T;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === "object" && value !== null;
+}
+
+function compactReplayConfig(
+    config: Partial<InlineCompletionDebugReplayConfig>,
+): InlineCompletionDebugReplayConfig {
+    return {
+        profileId: getInlineCompletionDebugProfileId(config.profileId) ?? null,
+        modelSelector: normalizeStringOrNull(config.modelSelector),
+        continuationModelSelector: normalizeStringOrNull(config.continuationModelSelector),
+        useSchemaContext: normalizeBooleanOrNull(config.useSchemaContext),
+        debounceMs: normalizeNumberOrNull(config.debounceMs),
+        maxTokens: normalizeNumberOrNull(config.maxTokens),
+        enabledCategories: Array.isArray(config.enabledCategories)
+            ? inlineCompletionCategories.filter((category) =>
+                  config.enabledCategories?.includes(category),
+              )
+            : null,
+        forceIntentMode: normalizeBooleanOrNull(config.forceIntentMode),
+        customSystemPrompt: normalizeStringOrNull(config.customSystemPrompt, true),
+        allowAutomaticTriggers: normalizeBooleanOrNull(config.allowAutomaticTriggers),
+        schemaContext: isRecord(config.schemaContext)
+            ? (cloneJson(config.schemaContext) as InlineCompletionDebugSchemaContextOverrides)
+            : null,
+    };
+}
+
+function compactPartialReplayConfig(
+    config: Partial<InlineCompletionDebugReplayConfig> | null | undefined,
+): Partial<InlineCompletionDebugReplayConfig> {
+    if (!config) {
+        return {};
+    }
+
+    const output: Partial<InlineCompletionDebugReplayConfig> = {};
+    for (const key of Object.keys(config) as Array<keyof InlineCompletionDebugReplayConfig>) {
+        const value = config[key];
+        if (value !== undefined) {
+            (output as Record<string, unknown>)[key] = cloneJson(value);
+        }
+    }
+    return output;
+}
+
+function normalizeStringOrNull(value: unknown, preserveWhitespace: boolean = false): string | null {
+    if (typeof value !== "string") {
+        return null;
+    }
+
+    const normalized = preserveWhitespace ? value : value.trim();
+    return normalized.length > 0 ? normalized : null;
+}
+
+function normalizeBooleanOrNull(value: unknown): boolean | null {
+    return typeof value === "boolean" ? value : null;
+}
+
+function normalizeNumberOrNull(value: unknown): number | null {
+    return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function getInlineCompletionDebugProfileId(
+    value: unknown,
+): InlineCompletionDebugProfileId | undefined {
+    return inlineCompletionDebugProfileOptions.find((profile) => profile.id === value)?.id;
+}
+
+function getSchemaBudgetProfileId(
+    value: unknown,
+): InlineCompletionSchemaBudgetProfileId | undefined {
+    return typeof value === "string" &&
+        (["tight", "balanced", "generous", "unlimited", "custom"] as string[]).includes(value)
+        ? (value as InlineCompletionSchemaBudgetProfileId)
+        : undefined;
+}
+
+function getSchemaBudgetProfileLabel(profileId: InlineCompletionSchemaBudgetProfileId): string {
+    switch (profileId) {
+        case "tight":
+            return "Tight";
+        case "balanced":
+            return "Balanced";
+        case "generous":
+            return "Generous";
+        case "unlimited":
+            return "Unlimited";
+        case "custom":
+            return "Custom";
+    }
+}
+
+function moveReplayCartItem<T>(items: T[], fromIndex: number, toIndex: number): T[] {
+    if (
+        fromIndex < 0 ||
+        toIndex < 0 ||
+        fromIndex >= items.length ||
+        toIndex >= items.length ||
+        fromIndex === toIndex
+    ) {
+        return items;
+    }
+
+    const next = [...items];
+    const [item] = next.splice(fromIndex, 1);
+    if (item !== undefined) {
+        next.splice(toIndex, 0, item);
+    }
+    return next;
+}
+
+function formatReplayTime(timestamp: number): string {
+    return new Date(timestamp).toLocaleTimeString([], {
+        hour12: false,
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+    });
+}
+
+function getReplayTagLocals(
+    tags: InlineCompletionDebugEventTags | undefined,
+    fallbackSourceEventId: string,
+): Record<string, string> {
+    return {
+        ...(tags?.replayTraceId ? { replayTraceId: tags.replayTraceId } : {}),
+        ...(tags?.replayRunId ? { replayRunId: tags.replayRunId } : {}),
+        ...(tags?.replayMatrixCellId ? { replayMatrixCellId: tags.replayMatrixCellId } : {}),
+        replaySourceEventId: tags?.replaySourceEventId ?? fallbackSourceEventId,
+    };
+}
+
+function createQueuedReplayEvent(
+    snapshot: InlineCompletionDebugReplayEventSnapshot,
+    config: InlineCompletionDebugReplayConfig,
+    run: InlineCompletionDebugReplayRun,
+    position: number,
+    total: number,
+    matrixCell: InlineCompletionDebugReplayMatrixCell | undefined,
+): InlineCompletionDebugEvent {
+    const tags: InlineCompletionDebugEventTags = {
+        replayTraceId: run.traceId,
+        replayRunId: run.id,
+        ...(matrixCell ? { replayMatrixCellId: matrixCell.cellId } : {}),
+        replaySourceEventId: snapshot.sourceEventId,
+    };
+    return {
+        ...cloneJson(snapshot.event),
+        id: `R-${position}`,
+        timestamp: Date.now(),
+        triggerKind: "invoke",
+        explicitFromUser: true,
+        result: "queued",
+        latencyMs: 0,
+        inputTokens: undefined,
+        outputTokens: undefined,
+        modelFamily:
+            config.modelSelector ??
+            config.continuationModelSelector ??
+            snapshot.event.modelFamily ??
+            "default",
+        rawResponse: "",
+        sanitizedResponse: undefined,
+        finalCompletionText: undefined,
+        tags,
+        locals: {
+            ...snapshot.event.locals,
+            ...getReplayTagLocals(tags, snapshot.sourceEventId),
+            replayQueuedAt: new Date().toISOString(),
+            replayQueuePosition: position,
+            replayQueueTotal: total,
+            replayMatrixCellLabel: matrixCell
+                ? `${matrixCell.profileLabel} x ${matrixCell.schemaLabel}`
+                : undefined,
+        },
+    };
 }
 
 function cloneBaseEvent(event: InlineCompletionDebugEvent): Omit<InlineCompletionDebugEvent, "id"> {
@@ -1579,6 +2441,7 @@ function cloneBaseEvent(event: InlineCompletionDebugEvent): Omit<InlineCompletio
         sanitizedResponse: event.sanitizedResponse,
         finalCompletionText: event.finalCompletionText,
         schemaContextFormatted: event.schemaContextFormatted,
+        tags: event.tags ? { ...event.tags } : undefined,
         locals: event.locals,
         error: event.error,
     };

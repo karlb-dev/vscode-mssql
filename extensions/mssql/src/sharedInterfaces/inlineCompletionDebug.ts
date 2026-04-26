@@ -12,7 +12,11 @@ export type InlineCompletionResult =
     | "noPermission"
     | "error";
 
-export type InlineCompletionDebugEventResult = InlineCompletionResult | "cancelled" | "pending";
+export type InlineCompletionDebugEventResult =
+    | InlineCompletionResult
+    | "cancelled"
+    | "pending"
+    | "queued";
 
 export const inlineCompletionCategories = ["continuation", "intent"] as const;
 
@@ -100,6 +104,14 @@ export interface InlineCompletionDebugSchemaContextOverrides {
     [key: string]: unknown;
 }
 
+export interface InlineCompletionDebugEventTags {
+    replayTraceId?: string;
+    replayRunId?: string;
+    replayMatrixCellId?: string;
+    replaySourceEventId?: string;
+    [key: string]: string | undefined;
+}
+
 export interface InlineCompletionDebugEvent {
     id: string;
     timestamp: number;
@@ -129,6 +141,7 @@ export interface InlineCompletionDebugEvent {
     sanitizedResponse: string | undefined;
     finalCompletionText: string | undefined;
     schemaContextFormatted: string | undefined;
+    tags?: InlineCompletionDebugEventTags;
     locals: {
         [key: string]: unknown;
     };
@@ -193,6 +206,74 @@ export interface InlineCompletionDebugCustomPromptState {
     lastSavedAt?: number;
 }
 
+export type InlineCompletionDebugReplayConfig = InlineCompletionDebugOverrides;
+
+export type InlineCompletionDebugReplayCartConfigMode = "snapshot" | "override" | "live";
+
+export interface InlineCompletionDebugReplayEventSnapshot {
+    id: string;
+    sourceEventId: string;
+    sourceLabel: string;
+    capturedAt: number;
+    event: InlineCompletionDebugEvent;
+    capturedConfig: InlineCompletionDebugReplayConfig;
+    configMode: InlineCompletionDebugReplayCartConfigMode;
+    override?: Partial<InlineCompletionDebugReplayConfig> | null;
+}
+
+export interface InlineCompletionDebugReplayCartAddItem {
+    event: InlineCompletionDebugEvent;
+    sourceLabel?: string;
+}
+
+export interface InlineCompletionDebugReplayMatrixCell {
+    profileId: InlineCompletionDebugProfileId;
+    profileLabel: string;
+    schemaBudgetProfileId: InlineCompletionSchemaBudgetProfileId;
+    schemaLabel: string;
+    cellId: string;
+    ordinal: number;
+}
+
+export interface InlineCompletionDebugReplayRun {
+    id: string;
+    traceId: string;
+    kind: "single" | "matrix";
+    matrixCells?: InlineCompletionDebugReplayMatrixCell[];
+    startedAt: number;
+    completedAt?: number;
+    status: "queued" | "running" | "cancelled" | "completed";
+    totalEvents: number;
+    completedEvents: number;
+    activeMatrixCellId?: string;
+}
+
+export interface InlineCompletionDebugReplayQueueRow {
+    id: string;
+    runId: string;
+    traceId: string;
+    snapshotId: string;
+    sourceEventId: string;
+    position: number;
+    total: number;
+    status: "queued" | "running";
+    queuedAt: number;
+    startedAt?: number;
+    config: InlineCompletionDebugReplayConfig;
+    matrixCellId?: string;
+    matrixCellLabel?: string;
+    event: InlineCompletionDebugEvent;
+}
+
+export interface InlineCompletionDebugReplayState {
+    cart: InlineCompletionDebugReplayEventSnapshot[];
+    runs: InlineCompletionDebugReplayRun[];
+    queueRows: InlineCompletionDebugReplayQueueRow[];
+    activeRunId?: string;
+    builderOpen: boolean;
+    lastAddedAt?: number;
+}
+
 export interface InlineCompletionDebugWebviewState {
     events: InlineCompletionDebugEvent[];
     overrides: InlineCompletionDebugOverrides;
@@ -203,6 +284,7 @@ export interface InlineCompletionDebugWebviewState {
     recordWhenClosed: boolean;
     customPrompt: InlineCompletionDebugCustomPromptState;
     sessions: InlineCompletionDebugSessionsState;
+    replay: InlineCompletionDebugReplayState;
 }
 
 export interface InlineCompletionDebugReducers {
@@ -247,6 +329,46 @@ export interface InlineCompletionDebugReducers {
     };
     replaySessionEvent: {
         event: InlineCompletionDebugEvent;
+    };
+    openReplayBuilder: Record<string, never>;
+    closeReplayBuilder: {
+        restoreCart: boolean;
+    };
+    addEventsToReplayCart: {
+        items: InlineCompletionDebugReplayCartAddItem[];
+    };
+    addSessionToReplayCart: {
+        fileKey: string;
+    };
+    replaySessionNow: {
+        fileKey: string;
+    };
+    removeFromReplayCart: {
+        snapshotId: string;
+    };
+    reorderReplayCart: {
+        fromIndex: number;
+        toIndex: number;
+    };
+    clearReplayCart: Record<string, never>;
+    reverseReplayCart: Record<string, never>;
+    setReplayCartOverride: {
+        snapshotId: string;
+        override: Partial<InlineCompletionDebugReplayConfig> | null;
+    };
+    setReplayCartConfigMode: {
+        snapshotId: string;
+        configMode: InlineCompletionDebugReplayCartConfigMode;
+    };
+    queueReplayCart: {
+        configMode?: InlineCompletionDebugReplayCartConfigMode;
+    };
+    runReplayMatrix: {
+        profileIds: InlineCompletionDebugProfileId[];
+        schemaBudgetProfileIds: InlineCompletionSchemaBudgetProfileId[];
+    };
+    cancelReplayRun: {
+        runId?: string;
     };
     copyEventPayload: {
         eventId: string;

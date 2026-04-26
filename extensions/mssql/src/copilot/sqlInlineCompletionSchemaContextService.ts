@@ -10,6 +10,7 @@ import * as Constants from "../constants/constants";
 import ConnectionManager, { ConnectionInfo } from "../controllers/connectionManager";
 import SqlToolsServiceClient from "../languageservice/serviceclient";
 import { logger2 } from "../models/logger2";
+import { InlineCompletionDebugSchemaContextOverrides } from "../sharedInterfaces/inlineCompletionDebug";
 import { TelemetryActions, TelemetryViews } from "../sharedInterfaces/telemetry";
 import { sendActionEvent, sendErrorEvent } from "../telemetry/telemetry";
 import { getErrorMessage } from "../utils/utils";
@@ -527,12 +528,14 @@ export class SqlInlineCompletionSchemaContextService implements vscode.Disposabl
         document: vscode.TextDocument,
         relevanceText?: string,
         modelMaxInputTokens?: number,
+        debugSchemaContextOverrides?: InlineCompletionDebugSchemaContextOverrides | null,
     ): Promise<SqlInlineCompletionSchemaContext | undefined> {
         const ownerUri = document.uri.toString();
         return this.getSchemaContextForOwnerUri(
             ownerUri,
             relevanceText ?? document.getText(),
             modelMaxInputTokens,
+            debugSchemaContextOverrides,
         );
     }
 
@@ -540,6 +543,7 @@ export class SqlInlineCompletionSchemaContextService implements vscode.Disposabl
         ownerUri: string,
         relevanceText?: string,
         modelMaxInputTokens?: number,
+        debugSchemaContextOverrides?: InlineCompletionDebugSchemaContextOverrides | null,
     ): Promise<SqlInlineCompletionSchemaContext | undefined> {
         const connectionInfo = this._connectionManager.getConnectionInfo(ownerUri);
 
@@ -551,7 +555,10 @@ export class SqlInlineCompletionSchemaContextService implements vscode.Disposabl
             return undefined;
         }
 
-        const settings = getSqlInlineCompletionSchemaContextRuntimeSettings(modelMaxInputTokens);
+        const settings = getSqlInlineCompletionSchemaContextRuntimeSettings(
+            modelMaxInputTokens,
+            debugSchemaContextOverrides,
+        );
         const relevanceTerms = extractSchemaContextRelevanceTerms(
             relevanceText ?? "",
             settings.budget,
@@ -914,13 +921,17 @@ export class SqlInlineCompletionSchemaContextService implements vscode.Disposabl
 
 export function getSqlInlineCompletionSchemaContextRuntimeSettings(
     modelMaxInputTokens?: number,
+    debugSchemaContextOverrides?: InlineCompletionDebugSchemaContextOverrides | null,
 ): SqlInlineCompletionSchemaContextRuntimeSettings {
     const workspaceSettings = asRecord(
         vscode.workspace
             .getConfiguration()
             .get<unknown>(Constants.configCopilotInlineCompletionsSchemaContext, {}),
     );
-    const debugSettings = getDebugSchemaContextSettings();
+    const debugSettings =
+        debugSchemaContextOverrides === undefined
+            ? getDebugSchemaContextSettings()
+            : asRecord(debugSchemaContextOverrides ?? {});
     const mergedSettings = mergeSettingsRecords(workspaceSettings, debugSettings);
     const configuredProfile = normalizeBudgetProfileId(readString(mergedSettings, "budgetProfile"));
     const profileId = configuredProfile ?? "balanced";

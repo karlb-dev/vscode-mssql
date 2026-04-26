@@ -40,6 +40,7 @@ export const InlineCompletionDebugEventGrid = ({
     resizeToken,
     onCopyEventPayload,
     onReplayEvent,
+    onAddEventsToReplayCart,
     showReplay = true,
     getEventKey,
 }: {
@@ -52,12 +53,14 @@ export const InlineCompletionDebugEventGrid = ({
         kind: "id" | "json" | "prompt" | "rawResponse" | "sanitizedResponse",
     ) => void;
     onReplayEvent?: (event: InlineCompletionDebugEvent) => void;
+    onAddEventsToReplayCart?: (events: InlineCompletionDebugEvent[]) => void;
     showReplay?: boolean;
     getEventKey?: (event: InlineCompletionDebugEvent, index: number) => string;
 }) => {
     const classes = useStyles();
     const { themeKind } = useVscodeWebview();
-    const { copyEventPayload, replayEvent } = useInlineCompletionDebugContext();
+    const { addEventsToReplayCart, copyEventPayload, replayEvent } =
+        useInlineCompletionDebugContext();
     const reactGridRef = useRef<SlickgridReactInstance | undefined>(undefined);
     const resizeRafRef = useRef<number | null>(null);
     const gridInstanceIdRef = useRef<string | undefined>(undefined);
@@ -126,6 +129,28 @@ export const InlineCompletionDebugEventGrid = ({
         eventCountRef.current = events.length;
     }, [events.length]);
 
+    const getContextMenuEvents = useCallback((gridRow: InlineCompletionDebugGridRow) => {
+        const selectedRows = reactGridRef.current?.slickGrid?.getSelectedRows?.() ?? [];
+        const selectedItems = selectedRows
+            .map(
+                (row) =>
+                    (reactGridRef.current?.dataView?.getItem(row) as
+                        | InlineCompletionDebugGridRow
+                        | undefined) ?? gridRowsRef.current[row],
+            )
+            .filter((item): item is InlineCompletionDebugGridRow => !!item);
+        if (
+            selectedItems.length > 1 &&
+            selectedItems.some(
+                (item) => item[GRID_ROW_ID_PROPERTY] === gridRow[GRID_ROW_ID_PROPERTY],
+            )
+        ) {
+            return selectedItems.map(toDebugEvent);
+        }
+
+        return [toDebugEvent(gridRow)];
+    }, []);
+
     const columns = useMemo<Column<InlineCompletionDebugGridRow>[]>(
         () => [
             {
@@ -141,7 +166,8 @@ export const InlineCompletionDebugEventGrid = ({
                 name: "Time",
                 field: "timestamp",
                 minWidth: 118,
-                formatter: (_row, _cell, value) => monoFormatter(formatTime(Number(value))),
+                formatter: (_row, _cell, value, _column, event) =>
+                    monoFormatter(event.result === "queued" ? "--" : formatTime(Number(value))),
             },
             {
                 id: "document",
@@ -156,21 +182,30 @@ export const InlineCompletionDebugEventGrid = ({
                 field: "id",
                 minWidth: 88,
                 formatter: (_row, _cell, _value, _column, event) =>
-                    monoFormatter(`${event.line}:${event.column}`),
+                    monoFormatter(
+                        event.result === "queued" ? "--" : `${event.line}:${event.column}`,
+                    ),
             },
             {
                 id: "trigger",
                 name: "Trigger",
                 field: "explicitFromUser",
                 minWidth: 104,
-                formatter: (_row, _cell, value) => monoFormatter(value ? "explicit" : "automatic"),
+                formatter: (_row, _cell, value, _column, event) =>
+                    monoFormatter(
+                        getReplayRunId(event) ? "replay" : value ? "explicit" : "automatic",
+                    ),
             },
             {
                 id: "mode",
                 name: "Mode",
                 field: "completionCategory",
-                minWidth: 110,
+                minWidth: 120,
                 formatter: (_row, _cell, value, _column, event) => {
+                    if (event.result === "queued") {
+                        const position = formatReplayQueuePosition(event);
+                        return badgeFormatter(position ? `queued ${position}` : "queued", "intent");
+                    }
                     const category =
                         value === "intent" || value === "continuation"
                             ? value
@@ -194,10 +229,14 @@ export const InlineCompletionDebugEventGrid = ({
                 minWidth: 92,
                 formatter: (_row, _cell, value, _column, event) => {
                     const latencyMs =
-                        event.result === "pending"
-                            ? Math.max(0, Date.now() - event.timestamp)
-                            : Number(value ?? 0);
-                    return monoFormatter(`${latencyMs.toLocaleString()} ms`);
+                        event.result === "queued"
+                            ? undefined
+                            : event.result === "pending"
+                              ? Math.max(0, Date.now() - event.timestamp)
+                              : Number(value ?? 0);
+                    return monoFormatter(
+                        latencyMs === undefined ? "--" : `${latencyMs.toLocaleString()} ms`,
+                    );
                 },
             },
             {
@@ -206,17 +245,26 @@ export const InlineCompletionDebugEventGrid = ({
                 field: "id",
                 minWidth: 92,
                 formatter: (_row, _cell, _value, _column, event) =>
-                    monoFormatter(
-                        `${formatTokenCount(event.inputTokens)}/${formatTokenCount(event.outputTokens)}`,
-                    ),
+                    event.result === "queued"
+                        ? monoFormatter("--")
+                        : monoFormatter(
+                              `${formatTokenCount(event.inputTokens)}/${formatTokenCount(event.outputTokens)}`,
+                          ),
             },
             {
                 id: "result",
                 name: "Result",
                 field: "result",
                 minWidth: 132,
-                formatter: (_row, _cell, value) =>
-                    badgeFormatter(String(value), resultTone(String(value))),
+                formatter: (_row, _cell, value, _column, event) => {
+                    if (value === "queued") {
+                        return badgeFormatter("queued", resultTone(String(value)));
+                    }
+                    if (value === "pending" && getReplayRunId(event)) {
+                        return badgeFormatter("in flight", "intent");
+                    }
+                    return badgeFormatter(String(value), resultTone(String(value)));
+                },
             },
             {
                 id: "info",
@@ -224,7 +272,7 @@ export const InlineCompletionDebugEventGrid = ({
                 field: "id",
                 minWidth: 280,
                 formatter: (_row, _cell, _value, _column, event) =>
-                    monoFormatter(truncate(getInfoText(event), 80)),
+                    monoFormatter(truncate(getGridInfoText(event), 80)),
             },
         ],
         [],
@@ -245,6 +293,12 @@ export const InlineCompletionDebugEventGrid = ({
             enableContextMenu: true,
             enableCellNavigation: true,
             enableColumnReorder: true,
+            enableSelection: true,
+            multiSelect: true,
+            selectionOptions: {
+                selectActiveRow: true,
+                selectionType: "row",
+            },
             contextMenu: {
                 commandItems: [
                     { command: "copy-id", title: "Copy ID", iconCssClass: "fi fi-copy" },
@@ -269,6 +323,11 @@ export const InlineCompletionDebugEventGrid = ({
                                   title: "Replay this event",
                                   iconCssClass: "fi fi-arrow-sync",
                               },
+                              {
+                                  command: "add-to-replay-cart",
+                                  title: "Add to Replay Trace",
+                                  iconCssClass: "fi fi-add",
+                              },
                           ]
                         : []),
                 ],
@@ -278,6 +337,7 @@ export const InlineCompletionDebugEventGrid = ({
                         return;
                     }
                     const event = toDebugEvent(gridRow);
+                    const selectedEvents = getContextMenuEvents(gridRow);
 
                     switch (args.command) {
                         case "copy-id":
@@ -306,18 +366,37 @@ export const InlineCompletionDebugEventGrid = ({
                                 : copyEventPayload(event.id, "sanitizedResponse");
                             break;
                         case "replay":
-                            if (event.result === "pending") {
+                            if (event.result === "pending" || event.result === "queued") {
                                 break;
                             }
                             onReplayEvent ? onReplayEvent(event) : replayEvent(event.id);
                             break;
+                        case "add-to-replay-cart": {
+                            const replayableEvents = selectedEvents.filter(
+                                (item) => item.result !== "pending" && item.result !== "queued",
+                            );
+                            if (replayableEvents.length === 0) {
+                                break;
+                            }
+                            if (onAddEventsToReplayCart) {
+                                onAddEventsToReplayCart(replayableEvents);
+                            } else {
+                                addEventsToReplayCart(
+                                    replayableEvents.map((item) => ({ event: item })),
+                                );
+                            }
+                            break;
+                        }
                     }
                 },
             },
         }),
         [
+            addEventsToReplayCart,
             containerId,
             copyEventPayload,
+            getContextMenuEvents,
+            onAddEventsToReplayCart,
             onCopyEventPayload,
             onReplayEvent,
             replayEvent,
@@ -512,6 +591,60 @@ function toDebugEvent(gridRow: InlineCompletionDebugGridRow): InlineCompletionDe
     return event;
 }
 
+function getGridInfoText(event: InlineCompletionDebugEvent): string {
+    const replayRunId = getReplayRunId(event);
+    if (!replayRunId) {
+        return getInfoText(event);
+    }
+
+    const parts: string[] = [];
+    const matrixLabel = asString(event.locals.replayMatrixCellLabel);
+    const matrixCellId =
+        event.tags?.replayMatrixCellId ?? asString(event.locals.replayMatrixCellId);
+    const sourceEventId =
+        event.tags?.replaySourceEventId ?? asString(event.locals.replaySourceEventId);
+    if (matrixLabel) {
+        parts.push(matrixLabel);
+    } else if (matrixCellId) {
+        parts.push(`cell ${matrixCellId}`);
+    }
+    if (sourceEventId) {
+        parts.push(`src ${sourceEventId}`);
+    }
+
+    const detail = event.result === "queued" ? getPromptPreview(event) : getInfoText(event);
+    if (detail) {
+        parts.push(detail);
+    }
+    return parts.join(" · ");
+}
+
+function getPromptPreview(event: InlineCompletionDebugEvent): string {
+    const userMessage = event.promptMessages.find((message) => message.role === "user");
+    return userMessage?.content?.replace(/\s+/g, " ").trim() || "";
+}
+
+function getReplayRunId(event: InlineCompletionDebugEvent): string | undefined {
+    return event.tags?.replayRunId ?? asString(event.locals.replayRunId);
+}
+
+function formatReplayQueuePosition(event: InlineCompletionDebugEvent): string | undefined {
+    const position = asNumber(event.locals.replayQueuePosition);
+    const total = asNumber(event.locals.replayQueueTotal);
+    if (position === undefined || total === undefined) {
+        return undefined;
+    }
+    return `${position}/${total}`;
+}
+
+function asString(value: unknown): string | undefined {
+    return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function asNumber(value: unknown): number | undefined {
+    return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
 function monoFormatter(value: string): string {
     return `<span style="font-family: var(--vscode-editor-font-family, Consolas, monospace);">${escapeHtml(
         value,
@@ -544,6 +677,7 @@ function resultTone(result: string): "success" | "warning" | "danger" | "neutral
         case "accepted":
             return "success";
         case "pending":
+        case "queued":
             return "warning";
         case "error":
             return "danger";

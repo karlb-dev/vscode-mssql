@@ -8,7 +8,11 @@ import { useVscodeWebview } from "../../common/vscodeWebviewProvider";
 import {
     InlineCompletionDebugEvent,
     InlineCompletionDebugProfileId,
+    InlineCompletionDebugReplayCartAddItem,
+    InlineCompletionDebugReplayCartConfigMode,
+    InlineCompletionDebugReplayConfig,
     InlineCompletionDebugReducers,
+    InlineCompletionSchemaBudgetProfileId,
     InlineCompletionDebugWebviewState,
 } from "../../../sharedInterfaces/inlineCompletionDebug";
 
@@ -36,6 +40,29 @@ export interface InlineCompletionDebugContextProps {
     sessionsSyncToDatabase: () => void;
     replayEvent: (eventId: string) => void;
     replaySessionEvent: (event: InlineCompletionDebugEvent) => void;
+    openReplayBuilder: () => void;
+    closeReplayBuilder: (restoreCart: boolean) => void;
+    addEventsToReplayCart: (items: InlineCompletionDebugReplayCartAddItem[]) => void;
+    addSessionToReplayCart: (fileKey: string) => void;
+    replaySessionNow: (fileKey: string) => void;
+    removeFromReplayCart: (snapshotId: string) => void;
+    reorderReplayCart: (fromIndex: number, toIndex: number) => void;
+    clearReplayCart: () => void;
+    reverseReplayCart: () => void;
+    setReplayCartOverride: (
+        snapshotId: string,
+        override: Partial<InlineCompletionDebugReplayConfig> | null,
+    ) => void;
+    setReplayCartConfigMode: (
+        snapshotId: string,
+        configMode: InlineCompletionDebugReplayCartConfigMode,
+    ) => void;
+    queueReplayCart: (configMode?: InlineCompletionDebugReplayCartConfigMode) => void;
+    runReplayMatrix: (
+        profileIds: InlineCompletionDebugProfileId[],
+        schemaBudgetProfileIds: InlineCompletionSchemaBudgetProfileId[],
+    ) => void;
+    cancelReplayRun: (runId?: string) => void;
     copyEventPayload: (
         eventId: string,
         kind:
@@ -178,6 +205,98 @@ export const InlineCompletionDebugStateProvider = ({ children }: { children: Rea
         [extensionRpc],
     );
 
+    const openReplayBuilder = useCallback(() => {
+        extensionRpc.action("openReplayBuilder", {});
+    }, [extensionRpc]);
+
+    const closeReplayBuilder = useCallback(
+        (restoreCart: boolean) => {
+            extensionRpc.action("closeReplayBuilder", { restoreCart });
+        },
+        [extensionRpc],
+    );
+
+    const addEventsToReplayCart = useCallback(
+        (items: InlineCompletionDebugReplayCartAddItem[]) => {
+            extensionRpc.action("addEventsToReplayCart", { items });
+        },
+        [extensionRpc],
+    );
+
+    const addSessionToReplayCart = useCallback(
+        (fileKey: string) => {
+            extensionRpc.action("addSessionToReplayCart", { fileKey });
+        },
+        [extensionRpc],
+    );
+
+    const replaySessionNow = useCallback(
+        (fileKey: string) => {
+            extensionRpc.action("replaySessionNow", { fileKey });
+        },
+        [extensionRpc],
+    );
+
+    const removeFromReplayCart = useCallback(
+        (snapshotId: string) => {
+            extensionRpc.action("removeFromReplayCart", { snapshotId });
+        },
+        [extensionRpc],
+    );
+
+    const reorderReplayCart = useCallback(
+        (fromIndex: number, toIndex: number) => {
+            extensionRpc.action("reorderReplayCart", { fromIndex, toIndex });
+        },
+        [extensionRpc],
+    );
+
+    const clearReplayCart = useCallback(() => {
+        extensionRpc.action("clearReplayCart", {});
+    }, [extensionRpc]);
+
+    const reverseReplayCart = useCallback(() => {
+        extensionRpc.action("reverseReplayCart", {});
+    }, [extensionRpc]);
+
+    const setReplayCartOverride = useCallback(
+        (snapshotId: string, override: Partial<InlineCompletionDebugReplayConfig> | null) => {
+            extensionRpc.action("setReplayCartOverride", { snapshotId, override });
+        },
+        [extensionRpc],
+    );
+
+    const setReplayCartConfigMode = useCallback(
+        (snapshotId: string, configMode: InlineCompletionDebugReplayCartConfigMode) => {
+            extensionRpc.action("setReplayCartConfigMode", { snapshotId, configMode });
+        },
+        [extensionRpc],
+    );
+
+    const queueReplayCart = useCallback(
+        (configMode?: InlineCompletionDebugReplayCartConfigMode) => {
+            extensionRpc.action("queueReplayCart", configMode ? { configMode } : {});
+        },
+        [extensionRpc],
+    );
+
+    const runReplayMatrix = useCallback(
+        (
+            profileIds: InlineCompletionDebugProfileId[],
+            schemaBudgetProfileIds: InlineCompletionSchemaBudgetProfileId[],
+        ) => {
+            extensionRpc.action("runReplayMatrix", { profileIds, schemaBudgetProfileIds });
+        },
+        [extensionRpc],
+    );
+
+    const cancelReplayRun = useCallback(
+        (runId?: string) => {
+            extensionRpc.action("cancelReplayRun", { runId });
+        },
+        [extensionRpc],
+    );
+
     const copyEventPayload = useCallback(
         (
             eventId: string,
@@ -221,6 +340,20 @@ export const InlineCompletionDebugStateProvider = ({ children }: { children: Rea
                 sessionsSyncToDatabase,
                 replayEvent,
                 replaySessionEvent,
+                openReplayBuilder,
+                closeReplayBuilder,
+                addEventsToReplayCart,
+                addSessionToReplayCart,
+                replaySessionNow,
+                removeFromReplayCart,
+                reorderReplayCart,
+                clearReplayCart,
+                reverseReplayCart,
+                setReplayCartOverride,
+                setReplayCartConfigMode,
+                queueReplayCart,
+                runReplayMatrix,
+                cancelReplayRun,
                 copyEventPayload,
             }}>
             {children}

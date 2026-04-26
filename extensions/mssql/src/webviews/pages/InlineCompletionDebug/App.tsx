@@ -9,6 +9,7 @@ import { InlineCompletionDebugPage } from "./inlineCompletionDebug";
 import { InlineCompletionDebugTab, InlineCompletionDebugTabBar } from "./TabBar";
 import { SessionsTab } from "./sessions/SessionsTab";
 import { useInlineCompletionDebugSelector } from "./inlineCompletionDebugSelector";
+import { ReplayTraceBuilder } from "./components/ReplayTraceBuilder";
 
 const useStyles = makeStyles({
     root: {
@@ -65,6 +66,7 @@ export function InlineCompletionDebugApp() {
             <div className={activeTab === "sessions" ? classes.content : classes.hidden}>
                 <SessionsTab active={activeTab === "sessions"} />
             </div>
+            <ReplayTraceBuilder />
         </div>
     );
 }

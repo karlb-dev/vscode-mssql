@@ -22,7 +22,11 @@ export type InlineCompletionAnalysisDimension =
     | "trigger"
     | "language"
     | "inferredSystemQuery"
-    | "completionCategory";
+    | "completionCategory"
+    | "replayTrace"
+    | "replayRun"
+    | "replayMatrixCell"
+    | "replaySourceEvent";
 
 export interface InlineCompletionAnalysisFilters {
     models?: string[];
@@ -42,6 +46,10 @@ export interface InlineCompletionAnalysisFilters {
     };
     languages?: string[];
     inferredSystemQuery?: boolean[];
+    replayTraces?: string[];
+    replayRuns?: string[];
+    replayMatrixCells?: string[];
+    replaySourceEvents?: string[];
 }
 
 export interface InlineCompletionAnalysisMetrics {
@@ -129,6 +137,30 @@ export function filterInlineCompletionEvents(
         if (
             filters.inferredSystemQuery?.length &&
             !filters.inferredSystemQuery.includes(event.inferredSystemQuery)
+        ) {
+            return false;
+        }
+        if (
+            filters.replayTraces?.length &&
+            !filters.replayTraces.includes(getEventDimension(event, "replayTrace"))
+        ) {
+            return false;
+        }
+        if (
+            filters.replayRuns?.length &&
+            !filters.replayRuns.includes(getEventDimension(event, "replayRun"))
+        ) {
+            return false;
+        }
+        if (
+            filters.replayMatrixCells?.length &&
+            !filters.replayMatrixCells.includes(getEventDimension(event, "replayMatrixCell"))
+        ) {
+            return false;
+        }
+        if (
+            filters.replaySourceEvents?.length &&
+            !filters.replaySourceEvents.includes(getEventDimension(event, "replaySourceEvent"))
         ) {
             return false;
         }
@@ -274,6 +306,18 @@ export function getEventDimension(
             return event.inferredSystemQuery ? "yes" : "no";
         case "completionCategory":
             return event.completionCategory ?? (event.intentMode ? "intent" : "continuation");
+        case "replayTrace":
+            return getEventTag(event, "replayTraceId") ?? "none";
+        case "replayRun":
+            return getEventTag(event, "replayRunId") ?? "none";
+        case "replayMatrixCell":
+            return (
+                asString(event.locals.replayMatrixCellLabel) ??
+                getEventTag(event, "replayMatrixCellId") ??
+                "none"
+            );
+        case "replaySourceEvent":
+            return getEventTag(event, "replaySourceEventId") ?? "none";
     }
 }
 
@@ -357,4 +401,8 @@ function isFiniteNumber(value: unknown): value is number {
 
 function asString(value: unknown): string | undefined {
     return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function getEventTag(event: InlineCompletionDebugEvent, key: string): string | undefined {
+    return event.tags?.[key] ?? asString(event.locals[key]);
 }
