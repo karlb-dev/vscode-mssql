@@ -31,10 +31,10 @@ const useStyles = makeStyles({
         display: "flex",
         alignItems: "center",
         justifyContent: "space-between",
-        gap: "8px",
-        ...shorthands.padding("0", "12px"),
+        gap: "6px",
+        ...shorthands.padding("0", "8px"),
         ...shorthands.borderBottom("1px", "solid", "var(--vscode-panel-border)"),
-        minHeight: "42px",
+        minHeight: "36px",
     },
     tabScroller: {
         flexGrow: 1,
@@ -109,6 +109,9 @@ const useStyles = makeStyles({
     },
     copyButton: {
         flexShrink: 0,
+        height: "28px",
+        minWidth: "auto",
+        ...shorthands.padding("0", "10px"),
     },
     note: {
         marginBottom: "8px",
@@ -175,6 +178,7 @@ export const InlineCompletionDebugDetailPane = ({
                 {activeTab === "system" ? (
                     <Button
                         className={classes.copyButton}
+                        size="small"
                         icon={<CopyRegular />}
                         onClick={() =>
                             onCopyEventPayload
@@ -186,6 +190,7 @@ export const InlineCompletionDebugDetailPane = ({
                 ) : activeTab === "user" ? (
                     <Button
                         className={classes.copyButton}
+                        size="small"
                         icon={<CopyRegular />}
                         onClick={() =>
                             onCopyEventPayload
@@ -197,6 +202,7 @@ export const InlineCompletionDebugDetailPane = ({
                 ) : activeTab === "raw" ? (
                     <Button
                         className={classes.copyButton}
+                        size="small"
                         icon={<CopyRegular />}
                         onClick={() =>
                             onCopyEventPayload
@@ -208,6 +214,7 @@ export const InlineCompletionDebugDetailPane = ({
                 ) : activeTab === "sanitized" ? (
                     <Button
                         className={classes.copyButton}
+                        size="small"
                         icon={<CopyRegular />}
                         onClick={() =>
                             onCopyEventPayload

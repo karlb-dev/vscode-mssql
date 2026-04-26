@@ -452,6 +452,9 @@ const useStyles = makeStyles({
     compactButton: {
         height: "28px",
         minWidth: "auto",
+        alignSelf: "center",
+        justifySelf: "start",
+        ...shorthands.padding("0", "8px"),
     },
     iconButton: {
         width: "28px",
@@ -1359,6 +1362,7 @@ export const InlineCompletionDebugToolbar = ({
                             <Button
                                 size="small"
                                 appearance="subtle"
+                                className={classes.compactButton}
                                 icon={<ArrowClockwise16Regular />}
                                 onClick={() => {
                                     refreshSchemaContext();
@@ -1369,6 +1373,7 @@ export const InlineCompletionDebugToolbar = ({
                             <Button
                                 size="small"
                                 appearance="subtle"
+                                className={classes.compactButton}
                                 icon={<DismissRegular />}
                                 onClick={() => {
                                     setSchemaContextOverride(null);
@@ -1578,6 +1583,8 @@ export const InlineCompletionDebugToolbar = ({
                             <div className={classes.schemaSectionBody}>
                                 {cacheControls.map(renderNumberInput)}
                                 <Button
+                                    size="small"
+                                    className={classes.compactButton}
                                     icon={<ArrowClockwise16Regular />}
                                     onClick={() => {
                                         refreshSchemaContext();

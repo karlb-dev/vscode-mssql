@@ -101,10 +101,10 @@ const useStyles = makeStyles({
     datasetHeader: {
         display: "grid",
         gridTemplateColumns: "minmax(220px, 1fr) auto",
-        columnGap: "10px",
+        columnGap: "8px",
         alignItems: "center",
-        minHeight: "36px",
-        ...shorthands.padding("0", "10px"),
+        minHeight: "34px",
+        ...shorthands.padding("0", "8px"),
     },
     folderText: {
         display: "flex",
@@ -126,7 +126,7 @@ const useStyles = makeStyles({
     },
     datasetActions: {
         display: "flex",
-        gap: "6px",
+        gap: "4px",
         alignItems: "center",
     },
     traceToggleActions: {
@@ -304,16 +304,21 @@ const useStyles = makeStyles({
         alignItems: "center",
         justifyContent: "space-between",
         flexWrap: "wrap",
-        gap: "10px",
-        minHeight: "40px",
-        ...shorthands.padding("5px", "10px"),
+        gap: "8px",
+        minHeight: "34px",
+        ...shorthands.padding("3px", "8px"),
         ...shorthands.borderBottom("1px", "solid", "var(--vscode-panel-border)"),
     },
     controlGroup: {
         display: "flex",
         alignItems: "center",
         flexWrap: "wrap",
-        gap: "8px",
+        gap: "6px",
+    },
+    compactButton: {
+        height: "28px",
+        minWidth: "auto",
+        ...shorthands.padding("0", "8px"),
     },
     pivotMeta: {
         color: "var(--vscode-descriptionForeground)",
@@ -724,6 +729,8 @@ export function SessionsTab({ active }: { active: boolean }) {
                                                         events
                                                     </Text>
                                                     <Button
+                                                        className={classes.compactButton}
+                                                        size="small"
                                                         icon={<ArrowDownloadRegular />}
                                                         onClick={() =>
                                                             exportPivotCsv(
@@ -864,6 +871,7 @@ function DatasetSelector({
                     <div className={classes.traceToggleActions}>
                         <FluentTooltip content="Select all traces" relationship="label">
                             <Button
+                                className={classes.compactButton}
                                 appearance="subtle"
                                 size="small"
                                 disabled={allIncluded || entries.length === 0}
@@ -873,6 +881,7 @@ function DatasetSelector({
                         </FluentTooltip>
                         <FluentTooltip content="Deselect all traces" relationship="label">
                             <Button
+                                className={classes.compactButton}
                                 appearance="subtle"
                                 size="small"
                                 disabled={noneIncluded || entries.length === 0}
@@ -882,20 +891,30 @@ function DatasetSelector({
                         </FluentTooltip>
                     </div>
                     <Button
+                        className={classes.compactButton}
                         icon={<ArrowSyncRegular />}
                         size="small"
                         onClick={onRefresh}
                         disabled={loading}>
                         Refresh
                     </Button>
-                    <Button icon={<FolderOpenRegular />} size="small" onClick={onChangeFolder}>
+                    <Button
+                        className={classes.compactButton}
+                        icon={<FolderOpenRegular />}
+                        size="small"
+                        onClick={onChangeFolder}>
                         Change folder
                     </Button>
-                    <Button icon={<AddRegular />} size="small" onClick={onAddFile}>
+                    <Button
+                        className={classes.compactButton}
+                        icon={<AddRegular />}
+                        size="small"
+                        onClick={onAddFile}>
                         Add file
                     </Button>
                     <FluentTooltip content="Coming soon" relationship="label">
                         <Button
+                            className={classes.compactButton}
                             icon={<DatabaseLinkRegular />}
                             size="small"
                             disabled
